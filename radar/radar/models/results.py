@@ -105,3 +105,5 @@ class ResultsBySource(db.Model):
         .group_by(Result.source_group_id, Result.source_type, Result.observation_id),
         PrimaryKeyConstraint('source_group_id', 'source_type', 'observation_id')
     )
+
+Index('results_by_source_idx', ResultsBySource.source_group_id, ResultsBySource.source_type, ResultsBySource.observation_id, unique=True)

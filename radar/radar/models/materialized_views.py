@@ -37,7 +37,14 @@ def create_materialized_view(name, selectable, *args):
     t = Table(name, tmp_metadata, *table_args)
 
     metadata = db.Model.metadata
+
     event.listen(metadata, 'after_create', CreateMaterializedView(name, selectable))
+
+    @event.listens_for(metadata, 'after_create')
+    def create_indexes(target, connection, **kw):
+        for idx in t.indexes:
+            idx.create(connection)
+
     event.listen(metadata, 'before_drop', DropMaterializedView(name))
 
     return t
