@@ -14,6 +14,7 @@ def cli(ctx, connection_string):
         'SQLALCHEMY_TRACK_MODIFICATIONS': False,
         'BASE_URL': 'http://localhost',
         'PASSWORD_HASH_METHOD': 'pbkdf2:sha1:1',
+        'SQLALCHEMY_ECHO': True,
     }
 
     ctx.obj['app'] = create_app(config)

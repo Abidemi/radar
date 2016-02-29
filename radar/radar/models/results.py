@@ -1,6 +1,6 @@
 from collections import OrderedDict
 
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Index
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Index, select, func, PrimaryKeyConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects import postgresql
 from enum import Enum
@@ -9,6 +9,7 @@ from radar.database import db
 from radar.models.common import MetaModelMixin, uuid_pk_column, patient_id_column, patient_relationship
 from radar.models.types import EnumType
 from radar.models.logs import log_changes
+from radar.models.materialized_views import create_materialized_view
 
 
 class OBSERVATION_VALUE_TYPE(Enum):
@@ -95,3 +96,12 @@ class Result(db.Model, MetaModelMixin):
         self._value = x
 
 Index('results_patient_idx', Result.patient_id)
+
+
+class ResultsBySource(db.Model):
+    __table__ = create_materialized_view(
+        'results_by_source',
+        select([Result.source_group_id, Result.source_type, Result.observation_id, func.count().label('count')])
+        .group_by(Result.source_group_id, Result.source_type, Result.observation_id),
+        PrimaryKeyConstraint('source_group_id', 'source_type', 'observation_id')
+    )
