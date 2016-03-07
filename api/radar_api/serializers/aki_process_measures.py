@@ -5,6 +5,7 @@ from radar_api.serializers.patient_mixins import PatientSerializerMixin
 from radar_api.serializers.sources import SourceSerializerMixin
 from radar.serializers.core import Serializer
 from radar.serializers.fields import IntegerField, ListField
+from radar_api.serializers.groups import GroupReferenceField
 
 
 class AkiProcessMeasuresSerializer(PatientSerializerMixin, SourceSerializerMixin, MetaSerializerMixin, ModelSerializer):
@@ -32,3 +33,7 @@ class AkiProcessMeasureStatsSerializer(Serializer):
 
     # Appropriate Care Score (ACS)
     acs = FractionSerializer()
+
+
+class AkiProcessMeasureStatsRequestSerializer(Serializer):
+    group = GroupReferenceField()

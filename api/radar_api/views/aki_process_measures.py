@@ -1,6 +1,11 @@
 from sqlalchemy import case, null, func, true, and_, or_
+from flask import request
 
-from radar_api.serializers.aki_process_measures import AkiProcessMeasuresSerializer, AkiProcessMeasureStatsSerializer
+from radar_api.serializers.aki_process_measures import (
+    AkiProcessMeasuresSerializer,
+    AkiProcessMeasureStatsSerializer,
+    AkiProcessMeasureStatsRequestSerializer
+)
 from radar.models.aki_process_measures import AkiProcessMeasures, PROCESS_MEASURES
 from radar.validation.aki_process_measures import AkiProcessMeasuresValidation
 from radar.views.patients import PatientObjectListView, PatientObjectDetailView
@@ -113,6 +118,10 @@ class AkiProcessMeasureStatsView(ApiView):
 
     @response_json(AkiProcessMeasureStatsSerializer)
     def get(self):
+        serializer = AkiProcessMeasureStatsRequestSerializer()
+        args = serializer.args_to_value(request.args)
+        group = args.get('group')
+
         cols = []
         cols.extend([get_numerator_col(x) for x in PROCESS_MEASURES])
         cols.extend([get_denominator_col(x) for x in PROCESS_MEASURES])
@@ -122,6 +131,10 @@ class AkiProcessMeasureStatsView(ApiView):
         cols.append(get_acs_denominator_col(PROCESS_MEASURES))
 
         q = db.session.query(*cols)
+
+        if group is not None:
+            q = q.filter(AkiProcessMeasures.source_group == group)
+
         row = q.one()
 
         names = list(PROCESS_MEASURES)
