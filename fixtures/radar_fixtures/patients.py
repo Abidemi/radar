@@ -29,6 +29,7 @@ from radar.models.groups import Group, GroupPatient, GROUP_TYPE, GROUP_CODE_NHS,
     GROUP_CODE_UKRR, GROUP_CODE_NHSBT
 from radar.groups import get_radar_group
 from radar.database import db
+from radar_fixtures.aki_process_measures import create_aki_process_measures_f
 
 
 def create_demographics_f():
@@ -205,6 +206,7 @@ def _create_patients(n, data):
     create_patient_numbers = create_patient_numbers_f()
     create_patient_addresses = create_patient_addresses_f()
     create_results = create_results_f()
+    create_aki_process_measures = create_aki_process_measures_f()
 
     for i in range(n):
         print 'patient #%d' % (i + 1)
@@ -251,6 +253,8 @@ def _create_patients(n, data):
                     create_plasmapheresis(patient, hospital_group, source_type, 3)
                     create_renal_imaging(patient, hospital_group, source_type, 3)
                     create_results(patient, hospital_group, source_type, 10, 25)
+
+                create_aki_process_measures(patient, hospital_group, SOURCE_TYPE_RADAR, 1)
 
         cohort_group_patient = GroupPatient()
         cohort_group_patient.group = random.choice(cohort_groups)

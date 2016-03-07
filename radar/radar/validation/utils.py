@@ -15,6 +15,7 @@ from radar.models.diagnoses import Diagnosis, GroupDiagnosis
 from radar.models.groups import Group, GroupPatient, GroupUser
 from radar.models.results import Result
 from radar.models.consultants import Consultant
+from radar.models.aki_process_measures import AkiProcessMeasures
 from radar.validation.dialysis import DialysisValidation
 from radar.validation.hospitalisations import HospitalisationValidation
 from radar.validation.medications import MedicationValidation
@@ -34,6 +35,7 @@ from radar.validation.groups import GroupValidation
 from radar.validation.group_users import GroupUserValidation
 from radar.validation.group_patients import GroupPatientValidation
 from radar.validation.diagnoses import DiagnosisValidation, GroupDiagnosisValidation
+from radar.validation.aki_process_measures import AkiProcessMeasuresValidation
 from radar.database import db
 from radar.auth.sessions import current_user
 
@@ -58,6 +60,7 @@ VALIDATIONS = {
     GroupUser: GroupUserValidation,
     GroupPatient: GroupPatientValidation,
     GroupDiagnosis: GroupDiagnosisValidation,
+    AkiProcessMeasures: AkiProcessMeasuresValidation,
 }
 
 
