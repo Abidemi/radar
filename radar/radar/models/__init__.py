@@ -1,5 +1,6 @@
 # flake8: noqa
 
+from radar.models.aki_process_measures import *
 from radar.models.alport import *
 from radar.models.common import *
 from radar.models.consultants import *

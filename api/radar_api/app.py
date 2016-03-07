@@ -50,6 +50,7 @@ from radar_api.views import roles
 from radar_api.views import logs
 from radar_api.views import renal_progressions
 from radar_api.views import random_password
+from radar_api.views import aki_process_measures
 from radar_api.auth import set_cors_headers
 from radar.auth.sessions import refresh_token, current_user
 from radar.database import db
@@ -104,6 +105,7 @@ class RadarApi(Flask):
 
         register_template_filters(self)
 
+        aki_process_measures.register_views(self)
         alport.register_views(self)
         consultants.register_views(self)
         diagnoses.register_views(self)
