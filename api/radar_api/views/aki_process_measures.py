@@ -2,15 +2,16 @@ from radar_api.serializers.aki_process_measures import AkiProcessMeasuresSeriali
 from radar.models.aki_process_measures import AkiProcessMeasures
 from radar.validation.aki_process_measures import AkiProcessMeasuresValidation
 from radar.views.patients import PatientObjectListView, PatientObjectDetailView
+from radar.views.sources import SourceObjectViewMixin
 
 
-class AkiProcessMeasuresListView(PatientObjectListView):
+class AkiProcessMeasuresListView(SourceObjectViewMixin, PatientObjectListView):
     serializer_class = AkiProcessMeasuresSerializer
     model_class = AkiProcessMeasures
     validation_class = AkiProcessMeasuresValidation
 
 
-class AkiProcessMeasuresDetailView(PatientObjectDetailView):
+class AkiProcessMeasuresDetailView(SourceObjectViewMixin, PatientObjectDetailView):
     serializer_class = AkiProcessMeasuresSerializer
     model_class = AkiProcessMeasures
     validation_class = AkiProcessMeasuresValidation

@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Boolean, Index
+from sqlalchemy import Column, Boolean, Index, Integer, ForeignKey, String, Date
+from sqlalchemy.orm import relationship
 
 from radar.database import db
 from radar.models.common import MetaModelMixin, uuid_pk_column, patient_id_column, patient_relationship
@@ -13,6 +14,12 @@ class AkiProcessMeasures(db.Model, MetaModelMixin):
 
     patient_id = patient_id_column()
     patient = patient_relationship('aki_process_measures')
+
+    source_group_id = Column(Integer, ForeignKey('groups.id'), nullable=False)
+    source_group = relationship('Group')
+    source_type = Column(String, nullable=False)
+
+    date = Column(Date, nullable=False)
 
     dipstick_urinalysis = Column(Boolean)
     medication_review = Column(Boolean)
