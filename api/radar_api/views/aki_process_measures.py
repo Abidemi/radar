@@ -1,4 +1,4 @@
-from sqlalchemy import case, cast, null, Integer, func, true, and_, or_
+from sqlalchemy import case, null, func, true, and_, or_
 
 from radar_api.serializers.aki_process_measures import AkiProcessMeasuresSerializer, AkiProcessMeasureStatsSerializer
 from radar.models.aki_process_measures import AkiProcessMeasures, PROCESS_MEASURES
