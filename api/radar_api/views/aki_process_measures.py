@@ -44,10 +44,10 @@ def get_numerator_col(process_measure):
     col = get_col(process_measure)
     label = get_numerator_label(process_measure)
 
-    return func.sum(case(
+    return func.coalesce(func.sum(case(
         [(col == true(), 1)],
         else_=0
-    )).label(label)
+    )), 0).label(label)
 
 
 def get_denominator_col(process_measure):
@@ -56,10 +56,10 @@ def get_denominator_col(process_measure):
     col = get_col(process_measure)
     label = get_denominator_label(process_measure)
 
-    return func.sum(case(
+    return func.coalesce(func.sum(case(
         [(col != null(), 1)],
         else_=0
-    )).label(label)
+    )), 0).label(label)
 
 
 def get_cqs_numerator_col(process_measures):
@@ -86,12 +86,12 @@ def get_acs_numerator_col(process_measures):
     cols = [get_col(x) for x in process_measures]
     label = get_numerator_label('acs')
 
-    return func.sum(
+    return func.coalesce(func.sum(
         case(
             [(and_(or_(x == true(), x == null()) for x in cols), 1)],
             else_=0
         )
-    ).label(label)
+    ), 0).label(label)
 
 
 def get_acs_denominator_col(process_measures):
