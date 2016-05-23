@@ -1,0 +1,193 @@
+from sqlalchemy.orm import aliased
+from sqlalchemy import or_, and_
+
+from radar.database import db
+from radar.models.dialysis import Dialysis
+from radar.models.diagnoses import PatientDiagnosis
+from radar.models.family_histories import FamilyHistory, FamilyHistoryRelative
+from radar.models.genetics import Genetics
+from radar.models.groups import GROUP_TYPE, Group, GroupPatient, GroupUser
+from radar.models.hospitalisations import Hospitalisation
+from radar.models.ins import InsClinicalPicture, InsRelapse
+from radar.models.medications import Medication
+from radar.models.mpgn import MpgnClinicalPicture
+from radar.models.pathology import Pathology
+from radar.models.patient_addresses import PatientAddress
+from radar.models.patient_aliases import PatientAlias
+from radar.models.patient_demographics import PatientDemographics
+from radar.models.patient_numbers import PatientNumber
+from radar.models.patients import Patient
+from radar.models.plasmapheresis import Plasmapheresis
+from radar.models.renal_progressions import RenalProgression
+from radar.models.results import Result
+from radar.models.transplants import Transplant, TransplantRejection, TransplantBiopsy
+from radar.roles import PERMISSION, get_roles_with_permission
+
+
+def filter_by_patient_permissions(query, user, patient_id, demographics=False):
+    if demographics:
+        permission = PERMISSION.VIEW_DEMOGRAPHICS
+    else:
+        permission = PERMISSION.VIEW_PATIENT
+
+    if not user.is_admin:
+        roles = get_roles_with_permission(permission)
+        patient_alias = aliased(Patient)
+        sub_query = db.session.query(patient_alias)\
+            .join(patient_alias.group_patients)\
+            .join(GroupPatient.group)\
+            .join(Group.group_users)\
+            .filter(
+                patient_alias.id == patient_id,
+                GroupUser.user_id == user.id,
+                GroupUser.role.in_(roles)
+            )
+
+        query = query.filter(sub_query.exists())
+
+    return query
+
+
+def filter_by_patient_group_permissions(query, user, patient_id, group_id):
+    # Filter the query based on the user's group membership
+    # Admins can view all data so don't filter their queries
+    if not user.is_admin:
+        group_a = aliased(Group)
+        group_b = aliased(Group)
+
+        # Check if the user has permission through their group membership (requires the VIEW_PATIENT permission)
+        # If the user has the VIEW_PATIENT permission on one of the patient's hospitals they can view all cohort data
+        sub_query = db.session.query(Group)\
+            .join(group_b, GroupPatient.group)\
+            .join(Group.group_users)\
+            .filter(
+                GroupPatient.patient_id == patient_id,
+                GroupUser.user == user,
+                GroupUser.role.in_(get_roles_with_permission(PERMISSION.VIEW_PATIENT)),
+                or_(
+                    GroupPatient.group_id == group_id,
+                    and_(
+                        group_a.type == GROUP_TYPE.COHORT,
+                        group_b.type == GROUP_TYPE.HOSPITAL
+                    )
+                )
+            )\
+            .exists()
+
+        # Filter the query to only include rows the user has permission to see
+        query = query.filter(sub_query)
+
+    return query
+
+
+def filter_by_patient_group(query, group, patient_id):
+    patient_alias = aliased(Patient)
+    group_patient_alias = aliased(GroupPatient)
+
+    sub_query = db.session.query(patient_alias)\
+        .join(group_patient_alias, patient_alias.group_patients)\
+        .filter(
+            group_patient_alias.patient_id == patient_id,
+            group_patient_alias.group_id == group.id
+        )\
+        .exists()
+
+    query = query.filter(sub_query)
+
+    return query
+
+
+def filter_by_data_group(query, group, group_id):
+    return query.filter(group_id == group.id)
+
+
+def patient_helper(klass):
+    def f(config):
+        q = db.session.query(klass).order_by(klass.patient_id, klass.id)
+        q = _patient_filter(q, klass.patient_id, config['user'], config['patient_group'])
+        return q
+
+    return f
+
+
+def _patient_filter(query, patient_id, user, patient_group):
+    if user is not None:
+        query = filter_by_patient_permissions(query, user, patient_id)
+
+    if patient_group is not None:
+        query = filter_by_patient_group(query, patient_group, patient_id)
+
+    return query
+
+
+def patient_group_helper(klass):
+    def f(config):
+        q = db.session.query(klass).order_by(klass.patient_id, klass.id)
+        q = _patient_group_filter(q, klass.patient_id, klass.group_id, config['user'], config['patient_group'], config['data_group'])
+        return q
+
+    return f
+
+
+def _patient_group_filter(query, patient_id, group_id, user, patient_group, data_group):
+    if user is not None:
+        query = filter_by_patient_group_permissions(query, user, patient_id, group_id)
+
+    if patient_group is not None:
+        query = filter_by_patient_group(query, patient_group, patient_id)
+
+    if data_group is not None:
+        query = filter_by_data_group(query, data_group, group_id)
+
+    return query
+
+
+def get_patients(config):
+    q = db.session.query(Patient).order_by(Patient.id)
+    q = _patient_filter(q, Patient.id, config['user'], config['patient_group'])
+    return q
+
+
+def get_family_history_relatives(config):
+    q = db.session.query(FamilyHistoryRelative)
+    q = q.join(FamilyHistoryRelative.family_history)
+    q = _patient_group_filter(q, FamilyHistory.patient_id, FamilyHistory.group_id, config['user'], config['patient_group'], config['data_group'])
+    q = q.order_by(FamilyHistory.patient_id, FamilyHistory.id, FamilyHistoryRelative.id)
+    return q
+
+
+def get_transplant_biopsies(config):
+    q = db.session.query(TransplantBiopsy)
+    q = q.join(TransplantBiopsy.transplant)
+    q = _patient_filter(q, Transplant.patient_id, config['user'], config['patient_group'])
+    q = q.order_by(Transplant.patient_id, Transplant.id, TransplantBiopsy.id)
+    return q
+
+
+def get_transplant_rejections(config):
+    q = db.session.query(TransplantRejection)
+    q = q.join(TransplantRejection.transplant)
+    q = _patient_filter(q, Transplant.patient_id, config['user'], config['patient_group'])
+    q = q.order_by(Transplant.patient_id, Transplant.id, TransplantRejection.id)
+    return q
+
+
+get_patient_demographics = patient_helper(PatientDemographics)
+get_patient_aliases = patient_helper(PatientAlias)
+get_patient_addresses = patient_helper(PatientAddress)
+get_patient_numbers = patient_helper(PatientNumber)
+get_medications = patient_helper(Medication)
+get_patient_diagnoses = patient_helper(PatientDiagnosis)
+get_family_histories = patient_group_helper(FamilyHistory)
+get_genetics = patient_group_helper(Genetics)
+get_pathology = patient_helper(Pathology)
+get_ins_clinical_pictures = patient_helper(InsClinicalPicture)
+get_ins_relapses = patient_helper(InsRelapse)
+get_dialyses = patient_helper(Dialysis)
+get_plasmapheresis = patient_helper(Plasmapheresis)
+get_transplants = patient_helper(Transplant)
+get_hospitalisations = patient_helper(Hospitalisation)
+get_group_patients = patient_helper(GroupPatient)
+get_renal_progressions = patient_helper(RenalProgression)
+get_mpgn_clinical_pictures = patient_helper(MpgnClinicalPicture)
+get_results = patient_helper(Result)
