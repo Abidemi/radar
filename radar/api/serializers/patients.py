@@ -26,6 +26,7 @@ class PatientSerializer(MetaMixin, ModelSerializer):
     year_of_birth = fields.IntegerField(read_only=True)
     date_of_death = fields.DateField(read_only=True)
     year_of_death = fields.IntegerField(read_only=True)
+    dead = fields.BooleanField(read_only=True)
     gender = IntegerLookupField(GENDERS, read_only=True)
     ethnicity = StringLookupField(ETHNICITIES, read_only=True)
     groups = fields.ListField(child=GroupPatientSerializer(), source='group_patients', read_only=True)
@@ -38,6 +39,10 @@ class PatientSerializer(MetaMixin, ModelSerializer):
     test = fields.BooleanField(default=False)
     frozen = fields.BooleanField(read_only=True)
     ukrdc = fields.BooleanField(read_only=True)
+
+    consent_status = fields.StringField(read_only=True)
+    consent_required = fields.BooleanField(read_only=True)
+    consent_message = fields.StringField(read_only=True)
 
     class Meta(object):
         model_class = Patient
@@ -72,6 +77,7 @@ class TinyPatientSerializer(serializers.Serializer):
     year_of_birth = fields.IntegerField(read_only=True)
     date_of_death = fields.DateField(read_only=True)
     year_of_death = fields.IntegerField(read_only=True)
+    dead = fields.BooleanField(read_only=True)
     gender = IntegerLookupField(GENDERS, read_only=True)
     ethnicity = StringLookupField(ETHNICITIES, read_only=True)
     groups = fields.ListField(child=TinyGroupPatientSerializer(), source='group_patients', read_only=True)
@@ -84,6 +90,10 @@ class TinyPatientSerializer(serializers.Serializer):
     test = fields.BooleanField(default=False)
     frozen = fields.BooleanField(read_only=True)
     ukrdc = fields.BooleanField(read_only=True)
+    
+    consent_status = fields.StringField(read_only=True)
+    consent_required = fields.BooleanField(read_only=True)
+    consent_message = fields.StringField(read_only=True)
 
     def to_representation(self, value):
         user = self.context['user']

@@ -1,6 +1,8 @@
 from collections import OrderedDict
 from datetime import datetime
+from enum import Enum
 
+import pytz
 from sqlalchemy import Column, Integer, select, join, String, func, exists, Sequence, Boolean, text
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import aliased
@@ -45,6 +47,25 @@ ETHNICITIES = OrderedDict([
     ('S', 'Other Ethnic Background'),
     ('Z', 'Refused / Not Stated'),
 ])
+
+
+class CONSENT_STATUS(Enum):
+    CONSENTED = 'CONSENTED'
+    RECONSENT = 'RECONSENT'
+    EXPIRED = 'EXPIRED'
+    WITHDRAWN = 'WITHDRAWN'
+    NOT_CONSENTED = 'NOT_CONSENTED'
+
+    def __str__(self):
+        return str(self.value)
+
+
+CONSENT_MESSAGES = {
+    CONSENT_STATUS.RECONSENT: 'Patient needs to be re-consented.',
+    CONSENT_STATUS.EXPIRED: 'Patient needs to be re-consented immediately.',
+    CONSENT_STATUS.WITHDRAWN: 'Patient has withdrawn their consent.',
+    CONSENT_STATUS.NOT_CONSENTED: 'Patient is not consented.',
+}
 
 
 def clean(items):
@@ -253,6 +274,10 @@ class Patient(db.Model, MetaModelMixin):
 
         return year_of_death
 
+    @property
+    def dead(self):
+        return self.date_of_death is not None
+
     @hybrid_property
     def ethnicity(self):
         return self.latest_demographics_attr('ethnicity')
@@ -396,3 +421,73 @@ class Patient(db.Model, MetaModelMixin):
     @ukrdc.expression
     def ukrdc(cls):
         return cls.ukrdc_patient.has()
+
+    @property
+    def withdrawn_consent(self):
+        # TODO
+        return False
+
+    @property
+    def consent_status(self):
+        if self.withdrawn_consent:
+            return CONSENT_STATUS.WITHDRAWN
+
+        now = datetime.now(pytz.UTC)
+        found = None
+        to_date = None
+
+        for membership in self.group_patients:
+            # Membership is not for RaDaR
+            if not membership.group.is_radar():
+                continue
+
+            # Membership is not valid yet
+            if membership.from_date > now:
+                continue
+
+            # Found a later to date
+            if to_date is None or membership.to_date is None or membership.to_date > to_date:
+                found = True
+                to_date = membership.to_date
+
+                # Stop searching if membership is open-ended as we will not
+                # find a later to date
+                if to_date is None:
+                    break
+
+        if found:
+            if to_date is None:
+                return CONSENT_STATUS.CONSENTED
+            elif to_date < now:
+                return CONSENT_STATUS.EXPIRED
+            elif (to_date - now).days <= 730:
+                return CONSENT_STATUS.RECONSENT
+            else:
+                return CONSENT_STATUS.CONSENTED
+        else:
+            return CONSENT_STATUS.NOT_CONSENTED
+
+    @property
+    def consent_required(self):
+        return not self.dead and self.consent_status in (
+            CONSENT_STATUS.RECONSENT,
+            CONSENT_STATUS.EXPIRED,
+            CONSENT_STATUS.NOT_CONSENTED,
+        )
+
+    @property
+    def consent_message(self):
+        if not self.consent_required:
+            return None
+
+        return CONSENT_MESSAGES.get(self.consent_status)
+
+    @property
+    def frozen(self):
+        return self.status in (
+            CONSENT_STATUS.EXPIRED,
+            CONSENT_STATUS.WITHDRAWN,
+            CONSENT_STATUS.NOT_CONSENTED,
+        )
+
+
