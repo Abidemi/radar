@@ -1,6 +1,8 @@
 import logging
 from functools import partial
 
+from sqlalchemy import and_, or_
+
 from radar.database import db
 from radar.models.results import Result, Observation
 from radar.ukrdc_importer.serializers import LabOrderSerializer
@@ -53,7 +55,14 @@ class SDALabOrder(object):
 
     @property
     def entering_organization(self):
-        return get_path(self.data, 'entering_organization', 'code')
+        return (
+            get_path(self.data, 'entering_organization', 'organization', 'code') or
+            get_path(self.data, 'entering_organization', 'code')
+        )
+
+    @property
+    def entered_at(self):
+        return get_path(self.data, 'entered_at', 'code')
 
 
 def parse_results(sda_lab_orders):
@@ -89,41 +98,65 @@ def get_result(result_id):
     return Result.query.get(result_id)
 
 
-def get_results(patient, min_date=None):
+def get_results(patient):
     q = Result.query
     q = q.filter(Result.source_type == 'UKRDC')
     q = q.filter(Result.patient == patient)
-
-    if min_date is not None:
-        q = q.filter(Result.date >= min_date)
-
     return q.all()
 
 
 def get_observation(code):
-    return Observation.query.filter(Observation.pv_code == code).first()
+    return Observation.query.filter(Observation.pv_code == code.upper()).first()
+
+
+def find_earliest_observations(results):
+    min_dates = {}
+
+    # Find the earliest date for each observation
+    for result in results:
+        min_date = min_dates.get(result.observation)
+
+        # First time this observation has been seen or an earlier result found
+        if min_date is None or result.date < min_date:
+            min_dates[result.observation] = result.date
+
+    return min_dates
 
 
 def sync_results(patient, results_to_keep):
     """Deletes results on or after the earliest date in the input data"""
 
-    def log(result):
-        logger.info('Deleting result id={}'.format(result.id))
-
-    # Need at least one result to work out which results to delete
+    # No results in the file, nothing to do
+    # This prevents all of the patient's previously imported results being deleted
     if len(results_to_keep) == 0:
         return
 
-    # Find earliest date from input data
-    min_date = min(results_to_keep, key=lambda x: x.date).date
+    def log(result):
+        logger.info('Deleting result id={}'.format(result.id))
 
-    # Get results on or after the min date
-    results = get_results(patient, min_date=min_date)
+    # Find the earliest date for each observation
+    min_dates = find_earliest_observations(results_to_keep)
+
+    # Find results that are after the min date for each observation
+    clauses = [
+        and_(Result.observation == observation, Result.date >= min_date)
+        for observation, min_date in min_dates.items()
+    ]
+
+    # Fetch previously imported results that we expected to see in this file
+    q = Result.query
+    q = q.filter(Result.source_type == 'UKRDC')
+    q = q.filter(Result.patient == patient)
+    q = q.filter(or_(*clauses))
+    results = q.all()
 
     delete_list(results, results_to_keep, delete_f=log)
 
 
 def build_result_id(patient, group, sda_lab_result_item):
+    # The external ID is not enough to identify each result as each lab order may contain many results
+    # Currently the lab orders we are receiving only contain one result (may change)
+    # The test item code is used along with the external ID to uniquely identify each result
     return build_id(
         patient.id,
         Result.__tablename__,
@@ -139,15 +172,15 @@ def convert_results(patient, sda_lab_orders):
     results = list()
 
     for sda_lab_order in sda_lab_orders:
+        # Ignore RaDaR data
+        if sda_lab_order.entered_at == 'RADAR':
+            continue
+
         code = sda_lab_order.entering_organization
         source_group = get_group(code)
 
         if source_group is None:
             logger.error('Ignoring lab order due to unknown entering organization code={code}'.format(code=code))
-            continue
-
-        # Ignore RaDaR data
-        if source_group.is_radar():
             continue
 
         for sda_lab_result_item in sda_lab_order.results:
@@ -192,6 +225,7 @@ def convert_results(patient, sda_lab_orders):
 def import_results(patient, sda_lab_orders):
     logger.info('Importing results')
 
+    # Preload results so calls to get() can use the cache rather than querying the database
     preload_results(patient)
 
     sda_lab_orders = parse_results(sda_lab_orders)
@@ -199,4 +233,4 @@ def import_results(patient, sda_lab_orders):
     results = convert_results(patient, sda_lab_orders)
     sync_results(patient, results)
 
-    logger.info('Imported {n} results(s)'.format(n=len(results)))
+    logger.info('Imported {n} result(s)'.format(n=len(results)))

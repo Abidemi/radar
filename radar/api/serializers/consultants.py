@@ -54,7 +54,7 @@ class GroupConsultantListSerializer(serializers.ListSerializer):
 
 
 # TODO check GMC number not duplicated
-class ConsultantSerializer(ModelSerializer):
+class ConsultantSerializer(MetaMixin, ModelSerializer):
     first_name = fields.StringField(validators=[not_empty(), upper(), max_length(100)])
     last_name = fields.StringField(validators=[not_empty(), upper(), max_length(100)])
     email = fields.StringField(required=False, validators=[none_if_blank(), optional(), lower(), email_address()])
@@ -65,6 +65,7 @@ class ConsultantSerializer(ModelSerializer):
 
     class Meta(object):
         model_class = Consultant
+        exclude = ['specialty_id']
 
     def _save(self, instance, data):
         instance.first_name = data['first_name']
@@ -74,6 +75,11 @@ class ConsultantSerializer(ModelSerializer):
         instance.gmc_number = data['gmc_number']
         instance.specialty = data['specialty']
         instance.group_consultants = self.fields['groups'].create(data['group_consultants'])
+
+        instance.created_user = data['created_user']
+        instance.modified_user = data['modified_user']
+        instance.created_date = data['created_date']
+        instance.modified_date = data['modified_date']
 
     def create(self, data):
         instance = Consultant()

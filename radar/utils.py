@@ -1,17 +1,19 @@
+import collections
 from datetime import datetime, date, timedelta
+from functools import partial
 from random import SystemRandom
 
-from sqlalchemy import and_
+import inflection
 import pytz
+import six
+from sqlalchemy import and_
 
 
 SECONDS_IN_YEAR = 365 * 24 * 60 * 60
 
 
 def date_to_datetime(d):
-    dt = datetime(year=d.year, month=d.month, day=d.day)
-    dt = pytz.timezone('Europe/London').localize(dt)
-    return dt
+    return datetime(year=d.year, month=d.month, day=d.day, tzinfo=pytz.utc)
 
 
 def is_date(x):
@@ -68,3 +70,17 @@ def uniq(items):
             unique_items.append(item)
 
     return unique_items
+
+
+def transform_keys(value, fn):
+    if isinstance(value, collections.Mapping):
+        value = {fn(k): transform_keys(v, fn) for k, v in value.items()}
+    elif isinstance(value, collections.Iterable) and not isinstance(value, six.string_types):
+        value = [transform_keys(v, fn) for v in value]
+
+    return value
+
+camel_case = partial(inflection.camelize, uppercase_first_letter=False)
+snake_case = partial(inflection.underscore)
+camel_case_keys = partial(transform_keys, fn=camel_case)
+snake_case_keys = partial(transform_keys, fn=snake_case)

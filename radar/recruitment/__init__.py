@@ -53,8 +53,6 @@ class SearchPatient(object):
 
         url = config['UKRDC_SEARCH_URL']
         timeout = config.get('UKRDC_SEARCH_TIMEOUT', 60)
-        username = config.get('UKRDC_SEARCH_USERNAME', 'RADAR')
-        password = config.get('UKRDC_SEARCH_PASSWORD', 'password')
 
         data = {
             'patient': {
@@ -81,7 +79,7 @@ class SearchPatient(object):
         }
 
         try:
-            r = requests.post(url, json=data, timeout=timeout, auth=(username, password))
+            r = requests.post(url, json=data, timeout=timeout)
 
             if r.status_code == 404:
                 logger.info('UKRDC patient not found')
@@ -237,15 +235,6 @@ class RecruitmentPatient(object):
         patient.modified_user = current_user
         db.session.add(patient)
 
-        radar_group_patient = GroupPatient()
-        radar_group_patient.patient = patient
-        radar_group_patient.group = radar_group
-        radar_group_patient.created_group = self.hospital_group
-        radar_group_patient.from_date = datetime.now(pytz.UTC)
-        radar_group_patient.created_user = current_user
-        radar_group_patient.modified_user = current_user
-        db.session.add(radar_group_patient)
-
         patient_demographics = PatientDemographics()
         patient_demographics.patient = patient
         patient_demographics.source_group = radar_group
@@ -272,7 +261,6 @@ class RecruitmentPatient(object):
         return patient
 
     def _add_to_group(self, patient, group):
-        # Add the patient to the cohort group
         if not patient.in_group(group, current=True):
             logger.info('Adding patient number={} to group id={}'.format(self.number, group.id))
 
@@ -286,6 +274,8 @@ class RecruitmentPatient(object):
             db.session.add(group_patient)
 
     def _update_patient(self, patient):
+        # Add to radar, hospital and cohort
+        self._add_to_group(patient, Group.get_radar())
         self._add_to_group(patient, self.hospital_group)
         self._add_to_group(patient, self.cohort_group)
 

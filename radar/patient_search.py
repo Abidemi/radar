@@ -21,7 +21,8 @@ class PatientQueryBuilder(object):
         self.query = Patient.query\
             .options(subqueryload('patient_demographics'))\
             .options(subqueryload('patient_numbers'))\
-            .options(subqueryload('group_patients').joinedload('group'))
+            .options(subqueryload('group_patients').joinedload('group'))\
+            .options(subqueryload('ukrdc_patient'))
 
     def first_name(self, first_name):
         self.filtering_by_demographics = True
@@ -96,8 +97,22 @@ class PatientQueryBuilder(object):
 
         return self
 
+    def ukrdc(self, value):
+        self.query = self.query.filter(Patient.ukrdc == value)
+        return self
+
     def sort(self, column, reverse=False):
         self.query = self.query.order_by(*sort_patients(self.current_user, column, reverse))
+        return self
+
+    def sort_by_group(self, group, reverse=False):
+        clause = sort_by_group(group)
+
+        if reverse:
+            clause = clause.desc()
+
+        self.query = self.query.order_by(clause)
+
         return self
 
     def build(self, permissions=True, current=None):
@@ -183,6 +198,7 @@ def filter_by_patient_number(number, exact=False):
         # Also search RaDaR IDs
         query = or_(query, filter_by_patient_id(int(number)))
     except ValueError:
+        # Not a valid RaDaR ID
         pass
 
     return query
@@ -317,3 +333,10 @@ def sort_patients(user, sort_by, reverse=False):
     clauses.append(sort_by_radar_id())
 
     return clauses
+
+
+def sort_by_group(group):
+    q = db.session.query(func.min(GroupPatient.from_date))
+    q = q.filter(GroupPatient.patient_id == Patient.id)
+    q = q.filter(GroupPatient.group_id == group.id)
+    return q.as_scalar()

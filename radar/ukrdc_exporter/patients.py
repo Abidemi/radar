@@ -3,13 +3,14 @@ import logging
 from radar.models.groups import (
     GROUP_CODE_NHS,
     GROUP_CODE_CHI,
-    GROUP_CODE_HANDC,
+    GROUP_CODE_HSC,
     GROUP_TYPE
 )
 from radar.models.patient_addresses import PatientAddress
 from radar.models.patient_aliases import PatientAlias
 from radar.models.patient_numbers import PatientNumber
 from radar.models.patients import GENDERS, ETHNICITIES
+from radar.utils import date_to_datetime
 
 
 logger = logging.getLogger(__name__)
@@ -26,14 +27,14 @@ def export_name(sda_patient, patient):
             sda_name['family_name'] = patient.last_name
 
 
-def export_date_birth(sda_patient, patient):
+def export_birth_time(sda_patient, patient):
     if patient.date_of_birth:
-        sda_patient['date_birth'] = patient.date_of_birth
+        sda_patient['birth_time'] = date_to_datetime(patient.date_of_birth)
 
 
-def export_date_death(sda_patient, patient):
+def export_death_time(sda_patient, patient):
     if patient.date_of_death:
-        sda_patient['date_death'] = patient.date_of_death
+        sda_patient['death_time'] = date_to_datetime(patient.date_of_death)
 
 
 def export_gender(sda_patient, patient):
@@ -131,8 +132,8 @@ def export_addresses(sda_patient, patient):
 
     for address in addresses:
         lines = [
-            address.address_1, address.address_2,
-            address.address_3, address.address_4
+            address.address1, address.address2,
+            address.address3, address.address4
         ]
 
         street = '; '.join(line for line in lines if line)
@@ -162,6 +163,8 @@ def export_patient_numbers(sda_patient, patient, group):
 
     sda_patient_numbers = sda_patient.setdefault('patient_numbers', list())
 
+    # The SDA must include a MRN otherwise all patients will be grouped under a NULL MRN
+    # The MRN must appear first in the list of numbers as the organization code is used as the facility
     sda_patient_number = {
         'number': str(patient.id),
         'number_type': 'MRN',
@@ -170,15 +173,15 @@ def export_patient_numbers(sda_patient, patient, group):
             'description': 'RaDaR'
         }
     }
-
     sda_patient_numbers.append(sda_patient_number)
 
     national_identifiers = {
         (GROUP_TYPE.OTHER, GROUP_CODE_NHS),
         (GROUP_TYPE.OTHER, GROUP_CODE_CHI),
-        (GROUP_TYPE.OTHER, GROUP_CODE_HANDC),
+        (GROUP_TYPE.OTHER, GROUP_CODE_HSC),
     }
 
+    # Export national identifiers
     for patient_number in patient_numbers:
         key = (patient_number.number_group.type, patient_number.number_group.code)
 
@@ -200,8 +203,8 @@ def export_patient_numbers(sda_patient, patient, group):
 def export_patient(sda_container, patient, group):
     sda_patient = sda_container.setdefault('patient', dict())
     export_name(sda_patient, patient)
-    export_date_birth(sda_patient, patient)
-    export_date_death(sda_patient, patient)
+    export_birth_time(sda_patient, patient)
+    export_death_time(sda_patient, patient)
     export_gender(sda_patient, patient)
     export_ethnic_group(sda_patient, patient)
     export_contact_info(sda_patient, patient)

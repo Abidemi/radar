@@ -1,3 +1,5 @@
+import re
+
 from cornflake import fields, serializers
 from cornflake.validators import none_if_blank
 
@@ -13,6 +15,7 @@ from radar.api.views.generics import (
     parse_args
 )
 from radar.models.patients import Patient
+from radar.models.groups import Group
 from radar.patient_search import PatientQueryBuilder
 
 
@@ -28,6 +31,7 @@ class PatientListRequestSerializer(serializers.Serializer):
     patient_number = fields.StringField(required=False, validators=[none_if_blank()])
     group = fields.CommaSeparatedField(required=False, child=GroupField())
     current = fields.BooleanField(required=False)
+    ukrdc = fields.BooleanField(required=False)
 
 
 class PatientListView(ListModelView):
@@ -51,6 +55,7 @@ class PatientListView(ListModelView):
         year_of_death = args['year_of_death']
         groups = args['group']
         current = args['current']
+        ukrdc = args['ukrdc']
 
         if patient_id is not None:
             builder.patient_id(patient_id)
@@ -79,13 +84,24 @@ class PatientListView(ListModelView):
         if year_of_death is not None:
             builder.year_of_death(year_of_death)
 
+        if ukrdc is not None:
+            builder.ukrdc(ukrdc)
+
         for group in groups:
             builder.group(group, current=current)
 
         sort, reverse = self.get_sort_args()
 
         if sort is not None:
-            builder.sort(sort, reverse)
+            m = re.match('^group_([0-9]+)', sort)
+
+            if m:
+                group = Group.query.get(int(m.group(1)))
+
+                if group is not None:
+                    builder.sort_by_group(group, reverse)
+            else:
+                builder.sort(sort, reverse)
 
         query = builder.build(current=current)
 

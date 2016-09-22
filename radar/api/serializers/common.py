@@ -119,6 +119,18 @@ class UserMixin(object):
         return attrs
 
 
+class QueryPatientField(ReferenceField):
+    model_class = Patient
+
+    def validate(self, patient):
+        user = self.context['user']
+
+        if not has_permission_for_patient(user, patient, PERMISSION.VIEW_PATIENT):
+            raise PermissionDenied()
+
+        return patient
+
+
 class PatientField(ReferenceField):
     model_class = Patient
 
@@ -152,9 +164,11 @@ class GroupSerializer(ModelSerializer):
     type = fields.EnumField(GROUP_TYPE)
     pages = fields.ListField(child=fields.StringField())
     has_dependencies = fields.BooleanField(read_only=True)
+    instructions = fields.StringField()
 
     class Meta(object):
         model_class = Group
+        exclude = ['_instructions']
 
 
 class GroupField(ReferenceField):

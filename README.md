@@ -1,4 +1,4 @@
-# RaDaR
+# RADAR
 
 [![Build Status](https://img.shields.io/travis/renalreg/radar/master.svg)](https://travis-ci.org/renalreg/radar) [![Code Climate](https://img.shields.io/codeclimate/github/renalreg/radar.svg)](https://codeclimate.com/github/renalreg/radar) [![Coveralls](https://img.shields.io/coveralls/renalreg/radar.svg)](https://coveralls.io/github/renalreg/radar)
 
@@ -116,3 +116,9 @@ git checkout tags/v1.0.0
 platter build -r requirements.txt .
 fab -H nww.radar.nhs.uk -u root deploy:archive=dist/radar-1.0.0-linux-x86_64.tar.gz
 ```
+
+## License
+
+Copyright (c) 2016 UK Renal Registry.
+
+Licensed under the [AGPL](LICENSE.md) license.

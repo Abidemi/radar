@@ -45,6 +45,8 @@ from radar.api.views import logs
 from radar.api.views import renal_progressions
 from radar.api.views import random_password
 from radar.api.views import aki_process_measures
+from radar.api.views import fuan
+from radar.api.views import pkd
 
 
 def setup(app):
@@ -59,6 +61,7 @@ def setup(app):
     fetal_ultrasounds.register_views(app)
     forgot_password.register_views(app)
     forgot_username.register_views(app)
+    fuan.register_views(app)
     genetics.register_views(app)
     groups.register_views(app)
     group_consultants.register_views(app)
@@ -80,6 +83,7 @@ def setup(app):
     patient_demographics.register_views(app)
     patient_numbers.register_views(app)
     patients.register_views(app)
+    pkd.register_views(app)
     plasmapheresis.register_views(app)
     posts.register_views(app)
     pregnancies.register_views(app)

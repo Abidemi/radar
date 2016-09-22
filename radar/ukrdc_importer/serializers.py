@@ -2,6 +2,8 @@ from datetime import datetime
 
 import pytz
 from cornflake import fields, serializers
+from cornflake.exceptions import ValidationError
+from cornflake.validators import upper
 
 
 def parse_sda_datetime(value):
@@ -23,6 +25,28 @@ class CodeDescriptionSerializer(serializers.Serializer):
     description = fields.StringField()
 
 
+class LooseCodeDescriptionSerializer(serializers.Serializer):
+    code = fields.StringField(required=False)
+    description = fields.StringField(required=False)
+
+
+class _OrganizationSerializer(serializers.Serializer):
+    code = fields.StringField(required=False)
+    description = fields.StringField(required=False)
+
+
+class EnteringOrganizationSerializer(serializers.Serializer):
+    code = fields.StringField(required=False)
+    description = fields.StringField(required=False)
+    organization = _OrganizationSerializer(required=False)
+
+    def validate(self, data):
+        if data['code'] is None and (data['organization'] is None or data['organization']['code'] is None):
+            raise ValidationError({'code': 'This field is required.'})
+
+        return data
+
+
 class AddressSerializer(serializers.Serializer):
     from_time = SDADateTimeField(required=False)
     to_time = SDADateTimeField(required=False)
@@ -41,8 +65,8 @@ class ContactInfoSerializer(serializers.Serializer):
 
 
 class NameSerializer(serializers.Serializer):
-    given_name = fields.StringField(required=False)
-    family_name = fields.StringField(required=False)
+    given_name = fields.StringField(required=False, validators=[upper()])
+    family_name = fields.StringField(required=False, validators=[upper()])
 
 
 class PatientSerializer(serializers.Serializer):
@@ -60,21 +84,18 @@ class PatientNumberSerializer(serializers.Serializer):
     organization = CodeDescriptionSerializer()
 
 
-class DrugProductSerializer(serializers.Serializer):
-    product_name = fields.StringField()
-
-
 class MedicationSerializer(serializers.Serializer):
     external_id = fields.StringField()
     from_time = SDADateTimeField()
     to_time = SDADateTimeField(required=False)
-    dose_u_o_m = CodeDescriptionSerializer()
-    drug_product = DrugProductSerializer()
-    entering_organization = CodeDescriptionSerializer()
+    dose_uom = LooseCodeDescriptionSerializer(required=False)
+    order_item = CodeDescriptionSerializer()
+    entering_organization = EnteringOrganizationSerializer()
+    entered_at = CodeDescriptionSerializer(required=False)
 
 
 class LabResultItemSerializer(serializers.Serializer):
-    observation_time = SDADateTimeField()
+    observation_time = SDADateTimeField(required=False)
     test_item_code = CodeDescriptionSerializer()
     result_value = fields.FloatField()
 
@@ -86,11 +107,15 @@ class ResultSerializer(serializers.Serializer):
 class LabOrderSerializer(serializers.Serializer):
     external_id = fields.StringField()
     from_time = SDADateTimeField(required=False)
-    entering_organization = CodeDescriptionSerializer()
+    entering_organization = EnteringOrganizationSerializer()
+    result = ResultSerializer()
+    entered_at = CodeDescriptionSerializer(required=False)
 
 
 class ContainerSerializer(serializers.Serializer):
     class PatientSerializer(serializers.Serializer):
+        aliases = fields.ListField(child=fields.Field(), required=False)
+        addresses = fields.ListField(child=fields.Field(), required=False)
         patient_numbers = fields.ListField(child=PatientNumberSerializer())
 
     patient = PatientSerializer()

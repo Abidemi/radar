@@ -1,7 +1,7 @@
 from cornflake.sqlalchemy_orm import ModelSerializer
 from cornflake import fields
 from cornflake import serializers
-from cornflake.exceptions import SkipField
+from cornflake.exceptions import SkipField, ValidationError
 from cornflake.validators import none_if_blank, optional, max_length
 
 from radar.api.serializers.common import (
@@ -35,9 +35,27 @@ class PatientSerializer(MetaMixin, ModelSerializer):
     comments = fields.StringField(required=False, validators=[none_if_blank(), optional(), max_length(10000)])
     current = fields.BooleanField(read_only=True)
     primary_patient_number = PatientNumberSerializer(read_only=True)
+    test = fields.BooleanField(default=False)
+    frozen = fields.BooleanField(read_only=True)
+    ukrdc = fields.BooleanField(read_only=True)
 
     class Meta(object):
         model_class = Patient
+
+    def validate_test(self, value):
+        instance = self.root.instance
+        user = self.context['user']
+
+        if (
+            (
+                (instance is None and value) or
+                (instance is not None and instance.test != value)
+            ) and
+            not user.is_admin
+        ):
+            raise ValidationError('Must be an admin!')
+
+        return value
 
     def to_representation(self, value):
         user = self.context['user']
@@ -63,6 +81,9 @@ class TinyPatientSerializer(serializers.Serializer):
     comments = fields.StringField(read_only=True)
     current = fields.BooleanField(read_only=True)
     primary_patient_number = PatientNumberSerializer(read_only=True)
+    test = fields.BooleanField(default=False)
+    frozen = fields.BooleanField(read_only=True)
+    ukrdc = fields.BooleanField(read_only=True)
 
     def to_representation(self, value):
         user = self.context['user']
