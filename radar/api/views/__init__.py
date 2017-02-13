@@ -1,3 +1,4 @@
+from radar.api.views import consents
 from radar.api.views import consultants
 from radar.api.views import forgot_password
 from radar.api.views import patient_consultants
@@ -51,6 +52,7 @@ from radar.api.views import forms
 
 def setup(app):
     alport.register_views(app)
+    consents.register_views(app)
     consultants.register_views(app)
     diagnoses.register_views(app)
     dialysis.register_views(app)
