@@ -1,11 +1,11 @@
 from collections import OrderedDict
 
-from sqlalchemy import Column, Integer, ForeignKey, String, Index
+from sqlalchemy import Column, ForeignKey, Index, Integer, String
 from sqlalchemy import Date
 from sqlalchemy.orm import relationship
 
 from radar.database import db
-from radar.models.common import MetaModelMixin, uuid_pk_column, patient_id_column, patient_relationship
+from radar.models.common import MetaModelMixin, patient_id_column, patient_relationship, uuid_pk_column
 from radar.models.logs import log_changes
 
 
@@ -44,5 +44,13 @@ class Plasmapheresis(db.Model, MetaModelMixin):
     to_date = Column(Date)
     no_of_exchanges = Column(String)
     response = Column(String)
+
+    @property
+    def no_of_exchanges_label(self):
+        return PLASMAPHERESIS_NO_OF_EXCHANGES.get(self.no_of_exchanges)
+
+    @property
+    def response_label(self):
+        return PLASMAPHERESIS_RESPONSES.get(self.response)
 
 Index('plasmapheresis_patient_idx', Plasmapheresis.patient_id)

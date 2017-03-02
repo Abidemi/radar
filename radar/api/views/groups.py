@@ -4,8 +4,8 @@ from radar.api.permissions import AdminWritePermission
 from radar.api.serializers.groups import GroupSerializer
 from radar.api.views.generics import (
     ListCreateModelView,
+    parse_args,
     RetrieveUpdateDestroyModelView,
-    parse_args
 )
 from radar.models.groups import Group, GROUP_TYPE
 
@@ -14,6 +14,7 @@ class GroupListRequestSerializer(serializers.Serializer):
     code = fields.StringField(required=False)
     type = fields.EnumField(GROUP_TYPE, required=False)
     is_recruitment_number_group = fields.BooleanField(required=False)
+    is_transplant_centre = fields.BooleanField(required=False)
 
 
 class GroupListView(ListCreateModelView):
@@ -26,12 +27,18 @@ class GroupListView(ListCreateModelView):
 
         args = parse_args(GroupListRequestSerializer)
 
+        # Filter by code
         if args['code'] is not None:
             query = query.filter(Group.code == args['code'])
 
+        # Filter by group type
         if args['type'] is not None:
             query = query.filter(Group.type == args['type'])
 
+        if args['is_transplant_centre'] is not None:
+            query = query.filter(Group.is_transplant_centre == args['is_transplant_centre'])
+
+        # Filter by recruitment number flag
         if args['is_recruitment_number_group'] is not None:
             query = query.filter(Group.is_recruitment_number_group == args['is_recruitment_number_group'])
 

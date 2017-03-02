@@ -1,32 +1,35 @@
-from cornflake.sqlalchemy_orm import ModelSerializer, ReferenceField
 from cornflake import fields
 from cornflake import serializers
-from cornflake.validators import none_if_blank, optional, max_length, min_length
 from cornflake.exceptions import ValidationError
+from cornflake.sqlalchemy_orm import ModelSerializer, ReferenceField
+from cornflake.validators import max_, max_length, min_, min_length, none_if_blank, optional
 
+from radar.api.serializers.codes import CodeSerializer
 from radar.api.serializers.common import (
+    EnumLookupField,
+    IntegerLookupField,
+    MetaMixin,
     PatientMixin,
     SourceMixin,
-    MetaMixin,
-    IntegerLookupField,
-    GroupField,
-    EnumLookupField
+    TinyGroupField,
 )
 from radar.api.serializers.validators import valid_date_for_patient
 from radar.database import db
 from radar.models.diagnoses import (
-    Diagnosis,
-    PatientDiagnosis,
     BIOPSY_DIAGNOSES,
+    Diagnosis,
     GROUP_DIAGNOSIS_TYPE,
     GROUP_DIAGNOSIS_TYPE_NAMES,
-    GroupDiagnosis
+    GroupDiagnosis,
+    PatientDiagnosis,
+
 )
 
 
 class GroupDiagnosisSerializer(ModelSerializer):
-    group = GroupField()
+    group = TinyGroupField()
     type = EnumLookupField(GROUP_DIAGNOSIS_TYPE, GROUP_DIAGNOSIS_TYPE_NAMES)
+    weight = fields.IntegerField(default=9999, validators=[min_(0), max_(9999)])
 
     class Meta(object):
         model_class = GroupDiagnosis
@@ -37,6 +40,8 @@ class GroupDiagnosisListSerializer(serializers.ListSerializer):
     child = GroupDiagnosisSerializer()
 
     def validate(self, group_diagnoses):
+        # Check the diagnosis isn't added to the same group multiple times.
+
         groups = set()
 
         for i, group_diagnosis in enumerate(group_diagnoses):
@@ -52,13 +57,16 @@ class GroupDiagnosisListSerializer(serializers.ListSerializer):
 
 class DiagnosisSerializer(ModelSerializer):
     name = fields.StringField(validators=[min_length(1), max_length(1000)])
-    groups = GroupDiagnosisListSerializer(source='group_diagnoses')
     retired = fields.BooleanField(default=False)
+    groups = GroupDiagnosisListSerializer(source='group_diagnoses')
+    codes = fields.ListField(child=CodeSerializer(), read_only=True)
 
     class Meta(object):
         model_class = Diagnosis
 
     def _save(self, instance, data):
+        # Custom save method so we can create the group_diagnoses records too.
+
         instance.name = data['name']
         instance.retired = data['retired']
         instance.group_diagnoses = self.fields['groups'].create(data['group_diagnoses'])
@@ -91,6 +99,7 @@ class DiagnosisField(ReferenceField):
 class PatientDiagnosisSerializer(PatientMixin, SourceMixin, MetaMixin, ModelSerializer):
     diagnosis = DiagnosisField(required=False)
     diagnosis_text = fields.StringField(required=False, validators=[none_if_blank(), optional(), max_length(1000)])
+    status = fields.BooleanField(default=True)
     symptoms_date = fields.DateField(required=False)
     symptoms_age = fields.IntegerField(read_only=True)
     from_date = fields.DateField()
@@ -115,11 +124,17 @@ class PatientDiagnosisSerializer(PatientMixin, SourceMixin, MetaMixin, ModelSeri
         ]
 
     def pre_validate(self, data):
+        # Ignore the text diagnosis if there is a coded diagnosis
         if data['diagnosis']:
             data['diagnosis_text'] = None
 
+        # Ignore the biopsy diagnosis if a biopsy wasn't peformed
         if not data['biopsy']:
             data['biopsy_diagnosis'] = None
+
+        # Ignore the symptoms date for negative diagnoses
+        if data['status'] is False:
+            data['symptoms_date'] = None
 
         return data
 
@@ -130,6 +145,7 @@ class PatientDiagnosisSerializer(PatientMixin, SourceMixin, MetaMixin, ModelSeri
         return diagnosis
 
     def validate(self, data):
+        # Must specify either a coded or free-text diagnosis
         if data['diagnosis'] is None and data['diagnosis_text'] is None:
             raise ValidationError({
                 'diagnosis': 'Must specify a diagnosis.',

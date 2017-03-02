@@ -1,10 +1,10 @@
-from sqlalchemy import String, Column, Integer, ForeignKey, DateTime, Index
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy.orm import backref, relationship
 
 from radar.database import db
-from radar.models.users import AnonymousUser
 from radar.models.logs import log_changes
+from radar.models.users import AnonymousUser
 
 
 @log_changes
@@ -28,6 +28,8 @@ Index('user_sessions_user_idx', UserSession.user_id)
 
 
 class AnonymousSession(object):
+    """Used when the user isn't logged in."""
+
     user = AnonymousUser()
 
     @classmethod

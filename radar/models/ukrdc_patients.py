@@ -1,4 +1,4 @@
-from sqlalchemy import select, and_, or_, exists, PrimaryKeyConstraint
+from sqlalchemy import and_, exists, or_, PrimaryKeyConstraint, select
 from sqlalchemy.orm import relationship
 
 from radar.database import db
@@ -12,6 +12,8 @@ username = 'ukrdc_importer'
 
 
 class UKRDCPatient(db.Model):
+    """View of patients with data from the UKRDC (e.g. medications or results)."""
+
     __table__ = create_view(
         'ukrdc_patients',
         select([Patient.id])

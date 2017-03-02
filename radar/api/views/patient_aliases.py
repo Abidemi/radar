@@ -1,19 +1,19 @@
 from radar.api.serializers.patient_aliases import PatientAliasSerializer
 from radar.api.views.common import (
-    RadarObjectViewMixin,
-    PatientObjectListView,
+    DemographicsViewMixin,
     PatientObjectDetailView,
-    DemographicsViewMixin
+    PatientObjectListView,
+    SystemObjectViewMixin,
 )
 from radar.models.patient_aliases import PatientAlias
 
 
-class PatientAliasListView(RadarObjectViewMixin, DemographicsViewMixin, PatientObjectListView):
+class PatientAliasListView(SystemObjectViewMixin, DemographicsViewMixin, PatientObjectListView):
     serializer_class = PatientAliasSerializer
     model_class = PatientAlias
 
 
-class PatientAliasDetailView(RadarObjectViewMixin, DemographicsViewMixin, PatientObjectDetailView):
+class PatientAliasDetailView(SystemObjectViewMixin, DemographicsViewMixin, PatientObjectDetailView):
     serializer_class = PatientAliasSerializer
     model_class = PatientAlias
 

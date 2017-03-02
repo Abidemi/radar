@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Date, Index
 
 from radar.database import db
-from radar.models.common import MetaModelMixin, uuid_pk_column, patient_id_column, patient_relationship
+from radar.models.common import MetaModelMixin, patient_id_column, patient_relationship, uuid_pk_column
 from radar.models.logs import log_changes
 
 
@@ -15,6 +15,10 @@ class RenalProgression(db.Model, MetaModelMixin):
     patient = patient_relationship(__tablename__)
 
     onset_date = Column(Date)
+    ckd3a_date = Column(Date)
+    ckd3b_date = Column(Date)
+    ckd4_date = Column(Date)
+    ckd5_date = Column(Date)
     esrf_date = Column(Date)
 
 Index('renal_progressions_patient_idx', RenalProgression.patient_id)

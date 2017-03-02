@@ -1,4 +1,4 @@
-from sqlalchemy import or_, case, desc, extract, null, func, and_
+from sqlalchemy import and_, case, desc, extract, func, null, or_
 from sqlalchemy.orm import aliased, subqueryload
 
 from radar.database import db
@@ -8,7 +8,7 @@ from radar.models.patient_demographics import PatientDemographics
 from radar.models.patient_numbers import PatientNumber
 from radar.models.patients import Patient
 from radar.roles import get_roles_with_permission, PERMISSION
-from radar.utils import sql_year_filter, sql_date_filter
+from radar.utils import sql_date_filter, sql_year_filter
 
 
 class PatientQueryBuilder(object):
@@ -18,10 +18,23 @@ class PatientQueryBuilder(object):
         # True if the query is filtering on demographics
         self.filtering_by_demographics = False
 
+        # Pre-load group_patients
+        group_patients = subqueryload('group_patients')
+        group_patients.joinedload('group')
+        group_patients.joinedload('created_group')
+        group_patients.joinedload('created_user')
+
+        # Pre-load patient_numbers
+        patient_numbers = subqueryload('patient_numbers')
+        patient_numbers.joinedload('number_group')
+        patient_numbers.joinedload('source_group')
+        patient_numbers.joinedload('created_user')
+        patient_numbers.joinedload('modified_user')
+
         self.query = Patient.query\
             .options(subqueryload('patient_demographics'))\
-            .options(subqueryload('patient_numbers'))\
-            .options(subqueryload('group_patients').joinedload('group'))\
+            .options(patient_numbers)\
+            .options(group_patients)\
             .options(subqueryload('ukrdc_patient'))
 
     def first_name(self, first_name):
@@ -43,8 +56,8 @@ class PatientQueryBuilder(object):
         self.query = self.query.filter(filter_by_patient_number(patient_number))
         return self
 
-    def patient_id(self, radar_id):
-        self.query = self.query.filter(filter_by_patient_id(radar_id))
+    def patient_id(self, patient_id):
+        self.query = self.query.filter(filter_by_patient_id(patient_id))
         return self
 
     def date_of_birth(self, value):
@@ -67,11 +80,8 @@ class PatientQueryBuilder(object):
 
     def group(self, group, current=None):
         # Filter by group
-        sub_query = db.session.query(GroupPatient)\
-            .filter(
-                GroupPatient.group == group,
-                GroupPatient.patient_id == Patient.id,
-            )
+        sub_query = db.session.query(GroupPatient)
+        sub_query = sub_query.filter(GroupPatient.group == group, GroupPatient.patient_id == Patient.id)
 
         if current is not None:
             if current:
@@ -101,6 +111,10 @@ class PatientQueryBuilder(object):
         self.query = self.query.filter(Patient.ukrdc == value)
         return self
 
+    def test(self, value):
+        self.query = self.query.filter(Patient.test == value)
+        return self
+
     def sort(self, column, reverse=False):
         self.query = self.query.order_by(*sort_patients(self.current_user, column, reverse))
         return self
@@ -126,10 +140,10 @@ class PatientQueryBuilder(object):
         # Admins can choose to show/hide historic patients
         if self.current_user.is_admin:
             if current is not None:
-                query = query.filter(Patient.current == current)
+                query = query.filter(Patient.current() == current)
         else:
-            # Regular users can only see current RaDaR users
-            query = query.filter(Patient.current == True)  # noqa
+            # Regular users can only see current patients
+            query = query.filter(Patient.current() == True)  # noqa
 
         return query
 
@@ -195,10 +209,10 @@ def filter_by_patient_number(number, exact=False):
         query = patient_number_sub_query(PatientNumber.number == number)
 
     try:
-        # Also search RaDaR IDs
+        # Also search patient ids
         query = or_(query, filter_by_patient_id(int(number)))
     except ValueError:
-        # Not a valid RaDaR ID
+        # Not a valid patient id
         pass
 
     return query
@@ -206,9 +220,15 @@ def filter_by_patient_number(number, exact=False):
 
 def filter_by_patient_number_at_group(number, number_group, exact=False):
     if exact:
-        query = patient_number_sub_query(PatientNumber.number.like(number + '%'), PatientNumber.number_group == number_group)
+        query = patient_number_sub_query(
+            PatientNumber.number.like(number + '%'),
+            PatientNumber.number_group == number_group
+        )
     else:
-        query = patient_number_sub_query(PatientNumber.number == number, PatientNumber.number_group == number_group)
+        query = patient_number_sub_query(
+            PatientNumber.number == number,
+            PatientNumber.number_group == number_group
+        )
 
     return query
 
@@ -231,15 +251,15 @@ def filter_by_year_of_death(year):
 
 def filter_by_group_roles(current_user, roles, current=None):
     patient_alias = aliased(Patient)
-    sub_query = db.session.query(patient_alias)\
-        .join(patient_alias.group_patients)\
-        .join(GroupPatient.group)\
-        .join(Group.group_users)\
-        .filter(
-            patient_alias.id == Patient.id,
-            GroupUser.user_id == current_user.id,
-            GroupUser.role.in_(roles)
-        )
+    sub_query = db.session.query(patient_alias)
+    sub_query = sub_query.join(patient_alias.group_patients)
+    sub_query = sub_query.join(GroupPatient.group)
+    sub_query = sub_query.join(Group.group_users)
+    sub_query = sub_query.filter(
+        patient_alias.id == Patient.id,
+        GroupUser.user_id == current_user.id,
+        GroupUser.role.in_(roles),
+    )
 
     if current:
         sub_query = sub_query.filter(GroupPatient.current == True)  # noqa
@@ -274,7 +294,7 @@ def sort_by_field(field, reverse=False):
     return field
 
 
-def sort_by_radar_id(reverse=False):
+def sort_by_patient_id(reverse=False):
     return sort_by_field(Patient.id, reverse)
 
 
@@ -306,7 +326,7 @@ def sort_by_date_of_birth(current_user, reverse=False):
 
 
 def sort_by_recruited_date(reverse=False):
-    return sort_by_field(Patient.recruited_date, reverse)
+    return sort_by_field(Patient.recruited_date(), reverse)
 
 
 def sort_by_primary_patient_number(reverse=False):
@@ -327,10 +347,10 @@ def sort_patients(user, sort_by, reverse=False):
     elif sort_by == 'primary_patient_number':
         clauses = [sort_by_primary_patient_number(reverse)]
     else:
-        return [sort_by_radar_id(reverse)]
+        return [sort_by_patient_id(reverse)]
 
-    # Decide ties using RaDaR ID
-    clauses.append(sort_by_radar_id())
+    # Decide ties using patient id
+    clauses.append(sort_by_patient_id())
 
     return clauses
 

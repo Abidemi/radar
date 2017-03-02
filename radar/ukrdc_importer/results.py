@@ -1,20 +1,20 @@
-import logging
 from functools import partial
+import logging
 
 from sqlalchemy import and_, or_
 
 from radar.database import db
-from radar.models.results import Result, Observation
+from radar.models.results import Observation, Result
 from radar.ukrdc_importer.serializers import LabOrderSerializer
 from radar.ukrdc_importer.utils import (
-    validate_list,
-    unique_list,
-    delete_list,
     build_id,
-    get_path,
+    delete_list,
+    get_group,
     get_import_user,
-    get_group
+    unique_list,
+    validate_list,
 )
+from radar.utils import get_path
 
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,12 @@ class SDALabOrder(object):
 
 def parse_results(sda_lab_orders):
     def log(index, sda_lab_order, e):
-        logger.error('Ignoring invalid lab order index={index}, errors={errors}'.format(index=index, errors=e.flatten()))
+        logger.error(
+            'Ignoring invalid lab order index={index}, errors={errors}'.format(
+                index=index,
+                errors=e.flatten()
+            )
+        )
 
     serializer = LabOrderSerializer()
     sda_lab_orders = validate_list(sda_lab_orders, serializer, invalid_f=log)
@@ -90,7 +95,7 @@ def unique_results(sda_lab_orders):
 
 
 def preload_results(patient):
-    """Preload results so get(id) can use the identity map rather than querying the database"""
+    """Preload results so get(id) can use the identity map rather than querying the database."""
     get_results(patient)
 
 
@@ -124,7 +129,7 @@ def find_earliest_observations(results):
 
 
 def sync_results(patient, results_to_keep):
-    """Deletes results on or after the earliest date in the input data"""
+    """Deletes results on or after the earliest date in the input data."""
 
     # No results in the file, nothing to do
     # This prevents all of the patient's previously imported results being deleted

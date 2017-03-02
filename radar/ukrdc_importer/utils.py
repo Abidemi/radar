@@ -1,12 +1,13 @@
-import uuid
 import calendar
 from datetime import datetime
+import uuid
 
 from cornflake.exceptions import ValidationError
 
 from radar.database import db
-from radar.models.groups import Group, GROUP_TYPE, GROUP_CODE_UKRDC
+from radar.models.groups import Group, GROUP_CODE_UKRDC, GROUP_TYPE
 from radar.models.users import User
+from radar.utils import get_path
 
 
 NAMESPACE = uuid.UUID('91bce7f1-ea5f-4c98-8350-33d65d597a10')
@@ -66,18 +67,6 @@ def build_id(*names):
         x = uuid.uuid5(x, str(name))
 
     return str(x)
-
-
-def get_path(data, *path):
-    value = data
-
-    for key in path:
-        value = value.get(key)
-
-        if value is None:
-            break
-
-    return value
 
 
 def update_path(data, f, *path):

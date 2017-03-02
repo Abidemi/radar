@@ -1,8 +1,10 @@
 import collections
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 from functools import partial
 from random import SystemRandom
 
+from cornflake.exceptions import SkipField
+from dateutil.relativedelta import relativedelta
 import inflection
 import pytz
 import six
@@ -42,25 +44,32 @@ def sql_year_filter(column, year):
     )
 
 
-# TODO this should just return number of months
-def seconds_to_age(seconds):
-    years = float(seconds) / SECONDS_IN_YEAR
+def months_between(a, b):
+    """Number of months between two dates."""
 
-    if years >= 5:
-        years = int(years)
-    else:
-        # Round down to nearest month
-        months = int((years - int(years)) * 12) / 12.0
-        years = int(years) + months
+    delta = relativedelta(a, b)
+    return delta.years * 12 + delta.months
 
-    return years * SECONDS_IN_YEAR
+
+def round_age(months):
+    """Remove partial years for ages > 5."""
+
+    # 60 months = 5 years
+    if months > 60:
+        months = months - (months % 12)
+
+    return months
 
 
 def random_string(alphabet, length):
+    """Random string from an alphabet."""
+
     return ''.join(SystemRandom().choice(alphabet) for _ in range(length))
 
 
 def uniq(items):
+    """Unique items in a list."""
+
     seen = set()
     unique_items = []
 
@@ -73,6 +82,8 @@ def uniq(items):
 
 
 def transform_keys(value, fn):
+    """Recursively transform the keys of the supplied value."""
+
     if isinstance(value, collections.Mapping):
         value = {fn(k): transform_keys(v, fn) for k, v in value.items()}
     elif isinstance(value, collections.Iterable) and not isinstance(value, six.string_types):
@@ -84,3 +95,57 @@ camel_case = partial(inflection.camelize, uppercase_first_letter=False)
 snake_case = partial(inflection.underscore)
 camel_case_keys = partial(transform_keys, fn=camel_case)
 snake_case_keys = partial(transform_keys, fn=snake_case)
+
+
+def get_path(data, *path):
+    """Get the dictionary value at the supplied path."""
+
+    value = data
+
+    for key in path:
+        if value is None:
+            break
+
+        value = value.get(key)
+
+    return value
+
+
+def get_attrs(data, *attrs):
+    """Get the object value at the supplied path."""
+
+    value = data
+
+    for attr in attrs:
+        if value is None:
+            break
+
+        try:
+            value = getattr(value, attr)
+        except AttributeError:
+            if isinstance(value, dict):
+                value = value.get(attr)
+            else:
+                value = None
+
+    return value
+
+
+class SkipProxy(object):
+    """Catch SkipField exceptions and return None instead."""
+
+    def __init__(self, instance):
+        self.instance = instance
+
+    def __getattr__(self, item):
+        try:
+            return getattr(self.instance, item)
+        except SkipField:
+            return None
+
+
+def pairwise(values):
+    """Group values in a list into pairs."""
+
+    iterator = iter(values)
+    return zip(iterator, iterator)

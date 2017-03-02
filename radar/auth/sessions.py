@@ -1,4 +1,4 @@
-from flask import request, has_request_context, _request_ctx_stack
+from flask import request, has_request_context, _request_ctx_stack, session
 from itsdangerous import BadSignature, TimestampSigner
 from sqlalchemy import func
 from werkzeug.local import LocalProxy
@@ -80,6 +80,9 @@ def login(username, password):
 
     _request_ctx_stack.top.user_session = user_session
 
+    # Set cookie
+    session['id'] = user_session.id
+
     token = generate_token_for_user_session(user_session)
 
     return user, token
@@ -98,6 +101,9 @@ def logout():
 
         _request_ctx_stack.top.user_session = AnonymousSession()
 
+        # Unset cookie
+        session.pop('id', None)
+
 
 def logout_other_sessions():
     if current_user_session.is_authenticated():
@@ -109,6 +115,7 @@ def logout_other_sessions():
 
 
 def logout_user(user):
+    # Delete user sessions
     UserSession.query\
         .filter(UserSession.user == user)\
         .delete()
@@ -118,6 +125,7 @@ def refresh_token(response):
     if current_user_session.is_authenticated():
         token = generate_token_for_user_session(current_user_session)
         response.headers['X-Auth-Token'] = token
+        session['id'] = current_user_session.id
 
     return response
 
@@ -148,6 +156,14 @@ def generate_token_for_user_session(user_session):
     return token
 
 
+def get_user_session_by_id(user_session_id):
+    q = UserSession.query
+    q = q.join(UserSession.user)
+    q = q.filter(UserSession.id == user_session_id)
+    q = q.filter(User.is_enabled == True)  # noqa
+    return q.first()
+
+
 def get_user_session_from_header():
     token = request.headers.get('X-Auth-Token')
 
@@ -165,17 +181,26 @@ def get_user_session_from_token(token):
     except BadSignature:
         return None
 
-    q = UserSession.query
-    q = q.join(UserSession.user)
-    q = q.filter(UserSession.id == user_session_id)
-    q = q.filter(User.is_enabled == True)  # noqa
+    return get_user_session_by_id(user_session_id)
 
-    return q.first()
+
+def get_user_session_from_cookie():
+    user_session_id = session.get('id')
+
+    if user_session_id is None:
+        return None
+
+    return get_user_session_by_id(user_session_id)
 
 
 def get_user_session():
     if has_request_context() and not hasattr(_request_ctx_stack.top, 'user_session'):
+        # Look in the header
         user_session = get_user_session_from_header()
+
+        # Fallback to the cookie
+        if user_session is None:
+            user_session = get_user_session_from_cookie()
 
         if user_session is not None:
             user = user_session.user
@@ -183,6 +208,7 @@ def get_user_session():
             if not user.is_enabled:
                 user_session = None
 
+        # Set the user session
         _request_ctx_stack.top.user_session = user_session
 
     user_session = getattr(_request_ctx_stack.top, 'user_session', None)

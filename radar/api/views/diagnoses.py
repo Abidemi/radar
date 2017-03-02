@@ -1,23 +1,33 @@
 from cornflake import fields, serializers
+from sqlalchemy.orm import subqueryload
 
 from radar.api.permissions import AdminPermission
-from radar.api.serializers.diagnoses import DiagnosisSerializer, PatientDiagnosisSerializer
 from radar.api.serializers.common import QueryPatientField
+from radar.api.serializers.diagnoses import DiagnosisSerializer, PatientDiagnosisSerializer
 from radar.api.views.common import (
     IntegerLookupListView,
-    SourceObjectViewMixin,
     PatientObjectDetailView,
     PatientObjectListView,
+    SourceObjectViewMixin,
     StringLookupListView
 )
 from radar.api.views.generics import (
     CreateModelView,
+    DestroyModelView,
+    ListModelView,
+    parse_args,
     RetrieveModelView,
     UpdateModelView,
-    DestroyModelView
 )
-from radar.api.views.generics import ListModelView, parse_args
-from radar.models.diagnoses import Diagnosis, PatientDiagnosis, BIOPSY_DIAGNOSES, GroupDiagnosis, GROUP_DIAGNOSIS_TYPE, GROUP_DIAGNOSIS_TYPE_NAMES
+from radar.models.diagnoses import (
+    BIOPSY_DIAGNOSES,
+    Diagnosis,
+    GROUP_DIAGNOSIS_TYPE,
+    GROUP_DIAGNOSIS_TYPE_NAMES,
+    GroupDiagnosis,
+    PatientDiagnosis,
+)
+
 from radar.models.groups import Group
 
 
@@ -71,7 +81,12 @@ class PatientDiagnosisListView(SourceObjectViewMixin, PatientObjectListView):
 
         # Secondary diagnosis for any of these groups
         if secondary_group_ids:
-            query = query.filter(patient_diagnosis_group_type_filter(secondary_group_ids, GROUP_DIAGNOSIS_TYPE.SECONDARY))
+            query = query.filter(
+                patient_diagnosis_group_type_filter(
+                    secondary_group_ids,
+                    GROUP_DIAGNOSIS_TYPE.SECONDARY
+                )
+            )
 
         # Excluding primary or secondary diagnoses
         if not include_primary or not include_secondary:
@@ -105,6 +120,10 @@ class DiagnosisListView(ListModelView):
 
     def filter_query(self, query):
         query = super(DiagnosisListView, self).filter_query(query)
+
+        # Load codes and groups in subqueries rather than lazy-loading (to avoid O(n) queries)
+        query = query.options(subqueryload('diagnosis_codes').joinedload('code'))
+        query = query.options(subqueryload('group_diagnoses').joinedload('group'))
 
         args = parse_args(DiagnosisRequestSerializer)
 
@@ -152,11 +171,15 @@ class GroupDiagnosisTypeListView(StringLookupListView):
 
 def register_views(app):
     app.add_url_rule('/patient-diagnoses', view_func=PatientDiagnosisListView.as_view('patient_diagnosis_list'))
-    app.add_url_rule('/patient-diagnoses/<id>', view_func=PatientDiagnosisDetailView.as_view('patient_diagnosis_detail'))
+    app.add_url_rule(
+        '/patient-diagnoses/<id>',
+        view_func=PatientDiagnosisDetailView.as_view('patient_diagnosis_detail'))
     app.add_url_rule('/diagnoses', view_func=DiagnosisListView.as_view('diagnosis_list'))
     app.add_url_rule('/diagnoses', view_func=DiagnosisCreateView.as_view('diagnosis_create'))
     app.add_url_rule('/diagnoses/<id>', view_func=DiagnosisRetrieveView.as_view('diagnosis_retrieve'))
     app.add_url_rule('/diagnoses/<id>', view_func=DiagnosisUpdateView.as_view('diagnosis_update'))
     app.add_url_rule('/diagnoses/<id>', view_func=DiagnosisDestroyView.as_view('diagnosis_destroy'))
     app.add_url_rule('/biopsy-diagnoses', view_func=BiopsyDiagnosisListView.as_view('biopsy_diagnosis_list'))
-    app.add_url_rule('/group-diagnosis-types', view_func=GroupDiagnosisTypeListView.as_view('group_diagnosis_type_list'))
+    app.add_url_rule(
+        '/group-diagnosis-types',
+        view_func=GroupDiagnosisTypeListView.as_view('group_diagnosis_type_list'))

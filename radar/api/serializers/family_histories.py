@@ -1,13 +1,12 @@
+from cornflake import fields, serializers
 from cornflake.sqlalchemy_orm import ModelSerializer, ReferenceField
-from cornflake import fields
-from cornflake import serializers
-from cornflake.validators import none_if_blank, optional, max_length
+from cornflake.validators import max_length, none_if_blank, optional
 
 from radar.api.serializers.common import (
-    PatientMixin,
     CohortGroupMixin,
+    IntegerLookupField,
     MetaMixin,
-    IntegerLookupField
+    PatientMixin,
 )
 from radar.database import db
 from radar.models.family_histories import FamilyHistory, FamilyHistoryRelative, RELATIONSHIPS
@@ -35,13 +34,17 @@ class RelativeSerializer(ModelSerializer):
 class FamilyHistorySerializer(PatientMixin, CohortGroupMixin, MetaMixin, ModelSerializer):
     parental_consanguinity = fields.BooleanField()
     family_history = fields.BooleanField()
-    other_family_history = fields.StringField(required=False, validators=[none_if_blank(), optional(), max_length(10000)])
+    other_family_history = fields.StringField(
+        required=False,
+        validators=[none_if_blank(), optional(), max_length(10000)]
+    )
     relatives = serializers.ListSerializer(required=False, child=RelativeSerializer())
 
     class Meta(object):
         model_class = FamilyHistory
 
     def pre_validate(self, data):
+        # No family history, no relatives
         if not data['family_history']:
             data['relatives'] = []
 

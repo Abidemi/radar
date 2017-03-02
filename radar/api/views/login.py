@@ -1,14 +1,14 @@
 from cornflake.exceptions import ValidationError
 
-from radar.auth.sessions import (
-    login,
-    logout_other_sessions,
-    DisabledLoginError,
-    UsernameLoginError,
-    PasswordLoginError
-)
 from radar.api.serializers.auth import LoginSerializer, TokenSerializer
 from radar.api.views.generics import ApiView, request_json, response_json
+from radar.auth.sessions import (
+    DisabledLoginError,
+    login,
+    logout_other_sessions,
+    PasswordLoginError,
+    UsernameLoginError,
+)
 
 
 class LoginView(ApiView):
@@ -22,6 +22,7 @@ class LoginView(ApiView):
         except (UsernameLoginError, PasswordLoginError):
             raise ValidationError({'username': 'Incorrect username or password.'})
 
+        # Optionally logout other sessions
         if credentials.get('logout_other_sessions', False):
             logout_other_sessions()
 

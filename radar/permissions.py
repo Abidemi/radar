@@ -69,8 +69,9 @@ def has_permission_for_group(user, group, permission, explicit=False):
     if user.is_admin:
         return True
     else:
-        # Users get permissions on the RaDaR group through their other groups
-        if not explicit and group.is_radar() and permission in (PERMISSION.VIEW_PATIENT, PERMISSION.EDIT_PATIENT):
+        # Users get permissions on the system groups through their other groups
+        view_edit = (PERMISSION.VIEW_PATIENT, PERMISSION.EDIT_PATIENT)
+        if not explicit and group.type == GROUP_TYPE.SYSTEM and permission in view_edit:
             return has_permission(user, permission)
 
         # Users get permissions on cohort groups through their hospital groups

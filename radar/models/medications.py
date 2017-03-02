@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 
 from collections import OrderedDict
-from sqlalchemy import Column, Date, String, ForeignKey, Numeric, Index
+from sqlalchemy import Column, Date, ForeignKey, Index, Numeric, String
 from sqlalchemy import Integer
 from sqlalchemy.orm import relationship
 
 from radar.database import db
-from radar.models.common import MetaModelMixin, uuid_pk_column, patient_id_column, patient_relationship
+from radar.models.common import MetaModelMixin, patient_id_column, patient_relationship, uuid_pk_column
 from radar.models.logs import log_changes
 
 
@@ -58,6 +58,14 @@ class Medication(db.Model, MetaModelMixin):
     drug_text = Column(String)
     dose_text = Column(String)
 
+    @property
+    def dose_unit_label(self):
+        return MEDICATION_DOSE_UNITS.get(self.dose_unit)
+
+    @property
+    def route_label(self):
+        return MEDICATION_ROUTES.get(self.route)
+
 Index('medications_patient_idx', Medication.patient_id)
 
 
@@ -81,3 +89,6 @@ class DrugGroup(db.Model):
 
     parent_drug_group_id = Column(Integer, ForeignKey('drug_groups.id'))
     parent_drug_group = relationship('DrugGroup', remote_side=[id])
+
+    def __unicode__(self):
+        return self.name

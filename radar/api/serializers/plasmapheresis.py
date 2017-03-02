@@ -1,12 +1,12 @@
-from cornflake.sqlalchemy_orm import ModelSerializer
 from cornflake import fields
 from cornflake.exceptions import ValidationError
+from cornflake.sqlalchemy_orm import ModelSerializer
 
 from radar.api.serializers.common import (
+    MetaMixin,
     PatientMixin,
     SourceMixin,
-    MetaMixin,
-    StringLookupField
+    StringLookupField,
 )
 from radar.api.serializers.validators import valid_date_for_patient
 from radar.models.plasmapheresis import Plasmapheresis, PLASMAPHERESIS_NO_OF_EXCHANGES, PLASMAPHERESIS_RESPONSES
@@ -28,6 +28,7 @@ class PlasmapheresisSerializer(PatientMixin, SourceMixin, MetaMixin, ModelSerial
     def validate(self, data):
         data = super(PlasmapheresisSerializer, self).validate(data)
 
+        # To date must be after from date
         if data['to_date'] is not None and data['to_date'] < data['from_date']:
             raise ValidationError({'to_date': 'Must be on or after from date.'})
 

@@ -1,22 +1,42 @@
-from cornflake.sqlalchemy_orm import ModelSerializer
-from cornflake import fields
-from cornflake import serializers
+from cornflake import fields, serializers
 from cornflake.exceptions import SkipField, ValidationError
-from cornflake.validators import none_if_blank, optional, max_length
+from cornflake.sqlalchemy_orm import ModelSerializer
+from cornflake.validators import max_length, none_if_blank, optional
 
 from radar.api.serializers.common import (
+    IntegerLookupField,
     MetaMixin,
-    TinyGroupSerializer,
-    TinyGroupPatientSerializer,
-    TinyUserSerializer,
     StringLookupField,
-    IntegerLookupField
+    TinyGroupPatientSerializer,
+    TinyGroupSerializer,
+    TinyUserSerializer,
 )
 from radar.api.serializers.group_patients import GroupPatientSerializer
 from radar.api.serializers.patient_numbers import PatientNumberSerializer
-from radar.models.patients import Patient, GENDERS, ETHNICITIES
+from radar.models.patient_codes import ETHNICITIES, GENDERS
+from radar.models.patients import Patient
 from radar.permissions import has_permission_for_patient
 from radar.roles import PERMISSION
+
+
+class RecruitedDateField(fields.DateField):
+    def get_attribute(self, patient):
+        return patient.recruited_date()
+
+
+class RecruitedGroupField(TinyGroupSerializer):
+    def get_attribute(self, patient):
+        return patient.recruited_group()
+
+
+class RecruitedUserField(TinyUserSerializer):
+    def get_attribute(self, patient):
+        return patient.recruited_user()
+
+
+class CurrentField(fields.BooleanField):
+    def get_attribute(self, patient):
+        return patient.current()
 
 
 class PatientSerializer(MetaMixin, ModelSerializer):
@@ -30,11 +50,11 @@ class PatientSerializer(MetaMixin, ModelSerializer):
     gender = IntegerLookupField(GENDERS, read_only=True)
     ethnicity = StringLookupField(ETHNICITIES, read_only=True)
     groups = fields.ListField(child=GroupPatientSerializer(), source='group_patients', read_only=True)
-    recruited_date = fields.DateTimeField(read_only=True)
-    recruited_group = TinyGroupSerializer(read_only=True)
-    recruited_user = TinyUserSerializer(read_only=True)
+    recruited_date = RecruitedDateField(read_only=True)
+    recruited_group = RecruitedGroupField(read_only=True)
+    recruited_user = RecruitedUserField(read_only=True)
     comments = fields.StringField(required=False, validators=[none_if_blank(), optional(), max_length(10000)])
-    current = fields.BooleanField(read_only=True)
+    current = CurrentField(read_only=True)
     primary_patient_number = PatientNumberSerializer(read_only=True)
     test = fields.BooleanField(default=False)
     frozen = fields.BooleanField(read_only=True)
@@ -51,6 +71,7 @@ class PatientSerializer(MetaMixin, ModelSerializer):
         instance = self.root.instance
         user = self.context['user']
 
+        # Must be an admin to change the test flag
         if (
             (
                 (instance is None and value) or
@@ -81,9 +102,9 @@ class TinyPatientSerializer(serializers.Serializer):
     gender = IntegerLookupField(GENDERS, read_only=True)
     ethnicity = StringLookupField(ETHNICITIES, read_only=True)
     groups = fields.ListField(child=TinyGroupPatientSerializer(), source='group_patients', read_only=True)
-    recruited_date = fields.DateTimeField(read_only=True)
-    recruited_group = TinyGroupSerializer(read_only=True)
-    recruited_user = TinyUserSerializer(read_only=True)
+    recruited_date = RecruitedDateField(read_only=True)
+    recruited_group = RecruitedGroupField(read_only=True)
+    recruited_user = RecruitedUserField(read_only=True)
     comments = fields.StringField(read_only=True)
     current = fields.BooleanField(read_only=True)
     primary_patient_number = PatientNumberSerializer(read_only=True)
@@ -135,20 +156,6 @@ class PatientProxy(object):
             return self.patient.primary_patient_number
         else:
             raise SkipField
-
-    @property
-    def year_of_birth(self):
-        if self.patient.date_of_birth is not None:
-            return self.patient.date_of_birth.year
-        else:
-            return None
-
-    @property
-    def year_of_death(self):
-        if self.patient.date_of_death is not None:
-            return self.patient.date_of_death.year
-        else:
-            return None
 
     def __getattr__(self, item):
         return getattr(self.patient, item)

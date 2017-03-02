@@ -1,23 +1,25 @@
 from datetime import datetime
 
-import pytz
 from cornflake import fields
 from cornflake import serializers
 from cornflake.sqlalchemy_orm import ModelSerializer, ReferenceField
 from cornflake.validators import in_
+import pytz
 
 from radar.exceptions import PermissionDenied
-from radar.models.groups import Group, GROUP_TYPE
+from radar.models.forms import Form, GroupForm
+from radar.models.groups import Group, GROUP_TYPE, GroupPage
 from radar.models.patients import Patient
-from radar.models.source_types import SOURCE_TYPE_RADAR, SOURCE_TYPE_UKRDC
+from radar.models.source_types import SOURCE_TYPE_MANUAL, SOURCE_TYPE_UKRDC
 from radar.models.users import User
-from radar.permissions import has_permission_for_patient, has_permission_for_group
+from radar.pages import PAGE
+from radar.permissions import has_permission_for_group, has_permission_for_patient
 from radar.roles import PERMISSION
 
 
 def lookup_field_defaults(kwargs):
-    kwargs.setdefault('key_name', 'id')
-    kwargs.setdefault('value_name', 'label')
+    kwargs.setdefault('key_name', 'id')  # Value stored in database
+    kwargs.setdefault('value_name', 'label')  # Value displayed to user
 
 
 class StringLookupField(fields.StringLookupField):
@@ -65,7 +67,7 @@ class CreatedUserField(UserField):
     def get_value(self, data):
         instance = self.root.instance
 
-        # New record
+        # Set the created_user to the current_user for new records
         if instance is None:
             return self.context['user']
         else:
@@ -74,6 +76,7 @@ class CreatedUserField(UserField):
 
 class ModifiedUserField(UserField):
     def get_value(self, data):
+        # Set the modified user to the current_user
         return self.context['user']
 
 
@@ -81,7 +84,7 @@ class CreatedDateField(fields.DateTimeField):
     def get_value(self, data):
         instance = self.root.instance
 
-        # New record
+        # Set the created_date to now for new records
         if instance is None:
             return datetime.now(pytz.utc)
         else:
@@ -90,6 +93,7 @@ class CreatedDateField(fields.DateTimeField):
 
 class ModifiedDateField(fields.DateTimeField):
     def get_value(self, data):
+        # Set the modified date to now
         return datetime.now(pytz.utc)
 
 
@@ -160,15 +164,41 @@ class TinyGroupSerializer(ModelSerializer):
         fields = ['id', 'type', 'code', 'name', 'short_name']
 
 
+class GroupPageSerializer(ModelSerializer):
+    page = fields.EnumField(PAGE)
+    weight = fields.IntegerField()
+
+    class Meta(object):
+        model_class = GroupPage
+        exclude = ['group_id']
+
+
+class TinyFormSerializer(ModelSerializer):
+    class Meta(object):
+        model_class = Form
+        fields = ['id', 'name', 'slug']
+
+
+class GroupFormSerializer(ModelSerializer):
+    form = TinyFormSerializer()
+    weight = fields.IntegerField()
+
+    class Meta(object):
+        model_class = GroupForm
+        exclude = ['group_id', 'form_id']
+
+
 class GroupSerializer(ModelSerializer):
     type = fields.EnumField(GROUP_TYPE)
-    pages = fields.ListField(child=fields.StringField())
+    pages = fields.ListField(child=GroupPageSerializer(), source='group_pages')
+    forms = fields.ListField(child=GroupFormSerializer(), source='group_forms')
     has_dependencies = fields.BooleanField(read_only=True)
     instructions = fields.StringField()
+    is_transplant_centre = fields.BooleanField()
 
     class Meta(object):
         model_class = Group
-        exclude = ['_instructions']
+        exclude = ['_instructions', 'parent_group_id']
 
 
 class GroupField(ReferenceField):
@@ -176,11 +206,17 @@ class GroupField(ReferenceField):
     serializer_class = GroupSerializer
 
 
+class TinyGroupField(ReferenceField):
+    model_class = Group
+    serializer_class = TinyGroupSerializer
+
+
 class SourceGroupField(GroupField):
     def validate(self, group):
         user = self.context['user']
 
-        if not user.is_admin and not group.is_radar() and group.type != GROUP_TYPE.HOSPITAL:
+        # Group must be a system or hospital (unless the user is an admin)
+        if not user.is_admin and group.type not in (GROUP_TYPE.SYSTEM, GROUP_TYPE.HOSPITAL):
             raise PermissionDenied()
 
         if not has_permission_for_group(user, group, PERMISSION.EDIT_PATIENT):
@@ -189,11 +225,12 @@ class SourceGroupField(GroupField):
         return group
 
 
-class RadarSourceGroupField(GroupField):
+class SystemSourceGroupField(GroupField):
     def validate(self, group):
         user = self.context['user']
 
-        if not user.is_admin and not group.is_radar():
+        # Group must be a system (unless the user is an admin)
+        if not user.is_admin and group.type != GROUP_TYPE.SYSTEM:
             raise PermissionDenied()
 
         if not has_permission_for_group(user, group, PERMISSION.EDIT_PATIENT):
@@ -204,6 +241,7 @@ class RadarSourceGroupField(GroupField):
 
 class CohortGroupField(GroupField):
     def validate(self, group):
+        # Group must be a cohort
         if group.type != GROUP_TYPE.COHORT:
             raise PermissionDenied()
 
@@ -212,15 +250,15 @@ class CohortGroupField(GroupField):
 
 class SourceTypeField(fields.StringField):
     def __init__(self, **kwargs):
-        kwargs.setdefault('default', SOURCE_TYPE_RADAR)
-        kwargs.setdefault('validators', [in_([SOURCE_TYPE_RADAR, SOURCE_TYPE_UKRDC])])
+        kwargs.setdefault('default', SOURCE_TYPE_MANUAL)
+        kwargs.setdefault('validators', [in_([SOURCE_TYPE_MANUAL, SOURCE_TYPE_UKRDC])])
         super(SourceTypeField, self).__init__(**kwargs)
 
     def validate(self, source_type):
         user = self.context['user']
 
-        # Only admins can enter data for a non-RaDaR source type
-        if not user.is_admin and source_type != SOURCE_TYPE_RADAR:
+        # Only admins can enter data for non-manual source types
+        if not user.is_admin and source_type != SOURCE_TYPE_MANUAL:
             raise PermissionDenied()
 
         return source_type
@@ -236,12 +274,12 @@ class SourceMixin(object):
         return model_exclude
 
 
-class RadarSourceMixin(object):
-    source_group = RadarSourceGroupField()
+class SystemSourceMixin(object):
+    source_group = SystemSourceGroupField()
     source_type = SourceTypeField()
 
     def get_model_exclude(self):
-        model_exclude = super(RadarSourceMixin, self).get_model_exclude()
+        model_exclude = super(SystemSourceMixin, self).get_model_exclude()
         model_exclude.add('source_group_id')
         return model_exclude
 

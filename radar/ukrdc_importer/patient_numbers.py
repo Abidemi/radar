@@ -1,16 +1,17 @@
 import logging
 
 from radar.database import db
+from radar.models.groups import GROUP_TYPE
 from radar.models.patient_numbers import PatientNumber
 from radar.ukrdc_importer.serializers import PatientNumberSerializer
 from radar.ukrdc_importer.utils import (
-    validate_list,
-    unique_list,
-    delete_list,
     build_id,
+    delete_list,
+    get_group,
     get_import_group,
     get_import_user,
-    get_group
+    unique_list,
+    validate_list,
 )
 
 
@@ -36,7 +37,12 @@ class SDAPatientNumber(object):
 
 def parse_patient_numbers(sda_patient_numbers):
     def log(index, sda_medication, e):
-        logger.error('Ignoring invalid patient number index={index}, errors={errors}'.format(index=index, errors=e.flatten()))
+        logger.error(
+            'Ignoring invalid patient number index={index}, errors={errors}'.format(
+                index=index,
+                errors=e.flatten()
+            )
+        )
 
     serializer = PatientNumberSerializer()
     sda_patient_numbers = validate_list(sda_patient_numbers, serializer, invalid_f=log)
@@ -95,8 +101,8 @@ def convert_patient_numbers(patient, sda_patient_numbers):
             logger.error('Ignoring patient number due to unknown organization code={code}'.format(code=code))
             continue
 
-        # Ignore RaDaR patient numbers
-        if number_group.is_radar():
+        # Ignore patient numbers for system groups
+        if number_group.type == GROUP_TYPE.SYSTEM:
             continue
 
         patient_number_id = build_patient_number_id(patient, sda_patient_number)

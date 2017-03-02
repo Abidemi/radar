@@ -1,24 +1,28 @@
-from cornflake.sqlalchemy_orm import ModelSerializer
 from cornflake import fields
+from cornflake.exceptions import SkipField, ValidationError
+from cornflake.sqlalchemy_orm import ModelSerializer
 from cornflake.validators import (
-    not_empty,
-    normalise_whitespace,
     max_length,
     none_if_blank,
+    normalise_whitespace,
+    not_empty,
     optional,
-    required,
-    postcode
+    postcode,
 )
-from cornflake.exceptions import ValidationError, SkipField
 
-from radar.api.serializers.common import PatientMixin, RadarSourceMixin, MetaMixin
-from radar.api.serializers.validators import remove_trailing_comma, after_date_of_birth
-from radar.models.patient_addresses import PatientAddress
+from radar.api.serializers.common import (
+    MetaMixin,
+    PatientMixin,
+    StringLookupField,
+    SystemSourceMixin,
+)
+from radar.api.serializers.validators import after_date_of_birth, remove_trailing_comma
+from radar.models.patient_addresses import COUNTRIES, PatientAddress
 from radar.permissions import has_permission_for_patient
 from radar.roles import PERMISSION
 
 
-class PatientAddressSerializer(PatientMixin, RadarSourceMixin, MetaMixin, ModelSerializer):
+class PatientAddressSerializer(PatientMixin, SystemSourceMixin, MetaMixin, ModelSerializer):
     from_date = fields.DateField(required=False)
     to_date = fields.DateField(required=False)
     address1 = fields.StringField(validators=[
@@ -55,7 +59,8 @@ class PatientAddressSerializer(PatientMixin, RadarSourceMixin, MetaMixin, ModelS
         normalise_whitespace(),
         max_length(100)
     ])
-    postcode = fields.StringField(validators=[required(), postcode()])
+    postcode = fields.StringField(required=False, validators=[postcode()])
+    country = StringLookupField(COUNTRIES)
 
     class Meta(object):
         model_class = PatientAddress
@@ -63,6 +68,12 @@ class PatientAddressSerializer(PatientMixin, RadarSourceMixin, MetaMixin, ModelS
             after_date_of_birth('from_date'),
             after_date_of_birth('to_date'),
         ]
+
+    def pre_validate(self, data):
+        if data['country'] != 'GB':
+            data['postcode'] = None
+
+        return data
 
     def validate(self, data):
         data = super(PatientAddressSerializer, self).validate(data)
@@ -73,6 +84,10 @@ class PatientAddressSerializer(PatientMixin, RadarSourceMixin, MetaMixin, ModelS
             data['to_date'] < data['from_date']
         ):
             raise ValidationError({'to_date': 'Must be on or after from date.'})
+
+        # Postcode is required for UK addresses
+        if data['country'] == 'GB' and data['postcode'] is None:
+            raise ValidationError({'postcode': 'Postcode is required for UK addresses.'})
 
         return data
 
@@ -123,10 +138,12 @@ class PatientAddressProxy(object):
 
         if self.demographics_permission:
             return postcode
-        else:
+        elif postcode is not None:
             # Return the first part of the postcode
             # Postcodes from the database should have a space but limit to 4 characters just in case
             return postcode.split(' ')[0][:4]
+        else:
+            return None
 
     def __getattr__(self, item):
         return getattr(self.address, item)

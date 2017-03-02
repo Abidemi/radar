@@ -1,9 +1,9 @@
 from collections import OrderedDict
-from sqlalchemy import Column, Integer, ForeignKey, Date, String, Index
+from sqlalchemy import Column, Date, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import relationship
 
 from radar.database import db
-from radar.models.common import MetaModelMixin, uuid_pk_column, patient_id_column, patient_relationship
+from radar.models.common import MetaModelMixin, patient_id_column, patient_relationship, uuid_pk_column
 from radar.models.logs import log_changes
 
 
@@ -38,5 +38,13 @@ class Pathology(db.Model, MetaModelMixin):
     image_url = Column(String)
     histological_summary = Column(String)
     em_findings = Column(String)
+
+    @property
+    def kidney_type_label(self):
+        return PATHOLOGY_KIDNEY_TYPES.get(self.kidney_type)
+
+    @property
+    def kidney_side_label(self):
+        return PATHOLOGY_KIDNEY_SIDES.get(self.kidney_side)
 
 Index('pathology_patient_idx', Pathology.patient_id)

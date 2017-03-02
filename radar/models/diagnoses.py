@@ -1,13 +1,13 @@
 from collections import OrderedDict
-
-from sqlalchemy import Column, Integer, ForeignKey, Date, String, Index, Boolean, text
-from sqlalchemy.orm import relationship, backref
 from enum import Enum
 
+from sqlalchemy import Boolean, CheckConstraint, Column, Date, ForeignKey, Index, Integer, String, text
+from sqlalchemy.orm import backref, relationship
+
 from radar.database import db
-from radar.models.common import MetaModelMixin, uuid_pk_column, patient_id_column, patient_relationship
-from radar.models.types import EnumType
+from radar.models.common import MetaModelMixin, patient_id_column, patient_relationship, uuid_pk_column
 from radar.models.logs import log_changes
+from radar.models.types import EnumType
 
 
 BIOPSY_DIAGNOSES = OrderedDict([
@@ -34,6 +34,7 @@ class PatientDiagnosis(db.Model, MetaModelMixin):
     diagnosis_id = Column(Integer, ForeignKey('diagnoses.id'))
     diagnosis = relationship('Diagnosis')
     diagnosis_text = Column(String)
+    status = Column(Boolean, nullable=False, default=True, server_default=text('true'))
 
     symptoms_date = Column(Date)
     from_date = Column(Date, nullable=False)
@@ -50,6 +51,8 @@ class PatientDiagnosis(db.Model, MetaModelMixin):
 
     @property
     def symptoms_age(self):
+        """Patient's age (in months) when the symptoms started."""
+
         if self.symptoms_date is None:
             r = None
         else:
@@ -59,16 +62,24 @@ class PatientDiagnosis(db.Model, MetaModelMixin):
 
     @property
     def from_age(self):
+        """Patient's age (in months) when they were diagnosed."""
+
         return self.patient.to_age(self.from_date)
 
     @property
     def to_age(self):
+        """Patient's age (in months) when they recovered."""
+
         if self.to_date is None:
             r = None
         else:
             r = self.patient.to_age(self.to_date)
 
         return r
+
+    @property
+    def biopsy_diagnosis_label(self):
+        return BIOPSY_DIAGNOSES.get(self.biopsy_diagnosis)
 
 Index('patient_diagnoses_patient_idx', PatientDiagnosis.patient_id)
 
@@ -84,6 +95,13 @@ class Diagnosis(db.Model):
     @property
     def groups(self):
         return [x.group for x in self.group_diagnoses]
+
+    @property
+    def codes(self):
+        return [x.code for x in self.diagnosis_codes]
+
+    def __unicode__(self):
+        return self.name
 
 
 class GROUP_DIAGNOSIS_TYPE(Enum):
@@ -109,11 +127,38 @@ class GroupDiagnosis(db.Model):
     group_id = Column(Integer, ForeignKey('groups.id'), nullable=False)
     group = relationship('Group')
 
-    diagnosis_id = Column(Integer, ForeignKey('diagnoses.id'), nullable=False)
-    diagnosis = relationship('Diagnosis', backref=backref('group_diagnoses', cascade='all, delete-orphan', passive_deletes=True))
+    diagnosis_id = Column(Integer, ForeignKey('diagnoses.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False)
+    diagnosis = relationship(
+        'Diagnosis',
+        backref=backref('group_diagnoses', cascade='all, delete-orphan', passive_deletes=True))
 
     type = Column(EnumType(GROUP_DIAGNOSIS_TYPE, name='group_diagnosis_type'), nullable=False)
+
+    weight = Column(Integer, CheckConstraint('weight >= 0'), nullable=False, default=9999, server_default=text('9999'))
+
+    def __unicode__(self):
+        return u"{} - {}".format(unicode(self.group), unicode(self.weight))
 
 Index('group_diagnoses_group_idx', GroupDiagnosis.group_id)
 Index('group_diagnoses_diagnosis_idx', GroupDiagnosis.diagnosis_id)
 Index('group_diagnoses_diagnosis_group_idx', GroupDiagnosis.diagnosis_id, GroupDiagnosis.group_id, unique=True)
+
+
+@log_changes
+class DiagnosisCode(db.Model):
+    __tablename__ = 'diagnosis_codes'
+
+    id = Column(Integer, primary_key=True)
+
+    diagnosis_id = Column(Integer, ForeignKey('diagnoses.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False)
+    diagnosis = relationship(
+        'Diagnosis',
+        backref=backref('diagnosis_codes', cascade='all, delete-orphan', passive_deletes=True))
+
+    code_id = Column(Integer, ForeignKey('codes.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False)
+    code = relationship('Code', backref=backref('diagnosis_codes', cascade='all, delete-orphan', passive_deletes=True))
+
+    def __unicode__(self):
+        return unicode(self.code)
+
+Index('diagnosis_codes_diagnosis_code_idx', DiagnosisCode.diagnosis_id, DiagnosisCode.code_id, unique=True)

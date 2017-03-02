@@ -1,27 +1,27 @@
+from cornflake import fields, serializers
 from sqlalchemy import func
-from cornflake import serializers, fields
 
 from radar.api.serializers.common import QueryPatientField
 from radar.api.serializers.results import (
-    ResultSerializer,
+    ObservationCountSerializer,
     ObservationSerializer,
+    ResultSerializer,
     TinyResultSerializer,
-    ObservationCountSerializer
 )
 from radar.api.views.common import (
-    SourceObjectViewMixin,
     PatientObjectDetailView,
-    PatientObjectViewMixin
+    PatientObjectViewMixin,
+    SourceObjectViewMixin,
 )
 from radar.api.views.generics import (
-    ListModelView,
-    RetrieveModelView,
     CreateModelView,
+    ListModelView,
     ListView,
-    parse_args
+    parse_args,
+    RetrieveModelView,
 )
 from radar.database import db
-from radar.models.results import Result, Observation
+from radar.models.results import Observation, Result
 
 
 class ObservationListRequestSerializer(serializers.Serializer):
@@ -47,6 +47,7 @@ class ResultListView(SourceObjectViewMixin, PatientObjectViewMixin, ListModelVie
 
         observation_ids = args['observation_id']
 
+        # Only results for the specified observation(s)
         if observation_ids:
             query = query.filter(Result.observation_id.in_(observation_ids))
 
@@ -72,6 +73,7 @@ class ObservationListView(ListModelView):
 
         value_types = args['value_type']
 
+        # Only observations with the specified value type(s)
         if value_types:
             query = query.filter(Observation.type.in_(value_types))
 
@@ -84,6 +86,8 @@ class ObservationDetailView(RetrieveModelView):
 
 
 class ObservationCountListView(ListView):
+    """Number of results for each type of observation."""
+
     serializer_class = ObservationCountSerializer
 
     def get_object_list(self):

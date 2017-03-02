@@ -1,6 +1,6 @@
-import json
-import itertools
 from datetime import datetime
+import itertools
+import json
 
 import pytest
 import pytz
@@ -8,7 +8,7 @@ import pytz
 from radar.database import db
 from radar.models.genetics import Genetics
 from radar.models.groups import GROUP_TYPE, GROUP_CODE_RADAR
-from tests.api.views.fixtures import get_user, get_patient, get_group, set_default_users
+from tests.api.fixtures import get_user, get_patient, get_group, set_default_users
 
 
 def create_genetics(patient, group, **kwargs):
@@ -53,7 +53,7 @@ def get_read_args():
 
 
 def get_create_args():
-    radar_group = (GROUP_TYPE.OTHER, GROUP_CODE_RADAR)
+    radar_group = (GROUP_TYPE.SYSTEM, GROUP_CODE_RADAR)
     hospital1_group = (GROUP_TYPE.HOSPITAL, 'HOSPITAL1')
     cohort1_group = (GROUP_TYPE.COHORT, 'COHORT1')
     cohort2_group = (GROUP_TYPE.COHORT, 'COHORT2')

@@ -1,14 +1,14 @@
 from datetime import date, timedelta
 
-import pytest
 from cornflake.exceptions import ValidationError
+import pytest
 
 from radar.api.serializers.medications import MedicationSerializer
 from radar.models.groups import Group
+from radar.models.medications import Drug
 from radar.models.patient_demographics import PatientDemographics
 from radar.models.patients import Patient
-from radar.models.medications import Drug
-from radar.models.source_types import SOURCE_TYPE_RADAR
+from radar.models.source_types import SOURCE_TYPE_MANUAL
 from radar.models.users import User
 
 
@@ -25,7 +25,7 @@ def patient():
 def medication(patient):
     return {
         'source_group': Group(),
-        'source_type': SOURCE_TYPE_RADAR,
+        'source_type': SOURCE_TYPE_MANUAL,
         'patient': patient,
         'from_date': date(2015, 1, 1),
         'to_date': date(2015, 1, 2),
@@ -67,7 +67,7 @@ def test_source_group_none(medication):
 def test_source_type_none(medication):
     medication['source_type'] = None
     medication = valid(medication)
-    assert medication.source_type == 'RADAR'
+    assert medication.source_type == SOURCE_TYPE_MANUAL
 
 
 def test_from_date_none(medication):

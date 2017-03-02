@@ -4,14 +4,14 @@ from radar.database import db
 from radar.models.medications import Medication
 from radar.ukrdc_importer.serializers import MedicationSerializer
 from radar.ukrdc_importer.utils import (
-    validate_list,
-    unique_list,
-    delete_list,
     build_id,
-    get_path,
+    delete_list,
+    get_group,
     get_import_user,
-    get_group
+    unique_list,
+    validate_list,
 )
+from radar.utils import get_path
 
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,12 @@ class SDAMedication(object):
 
 def parse_medications(sda_medications):
     def log(index, sda_medication, e):
-        logger.error('Ignoring invalid medication index={index}, errors={errors}'.format(index=index, errors=e.flatten()))
+        logger.error(
+            'Ignoring invalid medication index={index}, errors={errors}'.format(
+                index=index,
+                errors=e.flatten()
+            )
+        )
 
     serializer = MedicationSerializer()
     sda_medications = validate_list(sda_medications, serializer, invalid_f=log)

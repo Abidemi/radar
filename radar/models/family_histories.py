@@ -1,11 +1,10 @@
 from collections import OrderedDict
 
-from sqlalchemy import Column, Integer, ForeignKey, Boolean, String, Index
+from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, orm, String
 from sqlalchemy.dialects import postgresql
-from sqlalchemy import orm
 
 from radar.database import db
-from radar.models.common import MetaModelMixin, uuid_pk_column, patient_id_column, patient_relationship
+from radar.models.common import MetaModelMixin, patient_id_column, patient_relationship, uuid_pk_column
 from radar.models.logs import log_changes
 
 
@@ -65,12 +64,21 @@ class FamilyHistoryRelative(db.Model):
 
     id = Column(Integer, primary_key=True)
 
-    family_history_id = Column(postgresql.UUID, ForeignKey('family_histories.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False)
-    family_history = orm.relationship('FamilyHistory', backref=orm.backref('relatives', cascade='all, delete-orphan', passive_deletes=True))
+    family_history_id = Column(
+        postgresql.UUID,
+        ForeignKey('family_histories.id', onupdate='CASCADE', ondelete='CASCADE'),
+        nullable=False)
+    family_history = orm.relationship(
+        'FamilyHistory',
+        backref=orm.backref('relatives', cascade='all, delete-orphan', passive_deletes=True))
 
     relationship = Column(Integer, nullable=False)
 
     patient_id = Column(Integer, ForeignKey('patients.id', onupdate='CASCADE', ondelete='SET NULL'))
     patient = orm.relationship('Patient')
+
+    @property
+    def relationship_label(self):
+        return RELATIONSHIPS.get(self.relationship)
 
 Index('family_history_relatives_family_history_id_idx', FamilyHistoryRelative.family_history_id)

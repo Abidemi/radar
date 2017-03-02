@@ -1,52 +1,24 @@
-from collections import OrderedDict
 from datetime import datetime
 from enum import Enum
 
+<<<<<<< HEAD
 import pytz
 from sqlalchemy import Column, Integer, select, join, String, func, exists, Sequence, Boolean, text
 from sqlalchemy.ext.hybrid import hybrid_property
+=======
+from sqlalchemy import Boolean, Column, exists, func, Integer, join, select, Sequence, String, text
+from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+>>>>>>> master
 from sqlalchemy.orm import aliased
 
 from radar.database import db
 from radar.models.common import MetaModelMixin
-from radar.models.groups import Group, GroupPatient, GROUP_TYPE, GROUP_CODE_RADAR
+from radar.models.groups import Group, GROUP_TYPE, GroupPatient
 from radar.models.logs import log_changes
+from radar.models.patient_codes import ETHNICITIES, GENDER_FEMALE, GENDER_MALE, GENDERS
 from radar.models.patient_demographics import PatientDemographics
 from radar.models.patient_numbers import PatientNumber
-from radar.utils import seconds_to_age, uniq
-
-
-GENDER_NOT_KNOWN = 0
-GENDER_MALE = 1
-GENDER_FEMALE = 2
-GENDER_NOT_SPECIFIED = 9
-
-GENDERS = OrderedDict([
-    (GENDER_NOT_KNOWN, 'Not Known'),
-    (GENDER_MALE, 'Male'),
-    (GENDER_FEMALE, 'Female'),
-    (GENDER_NOT_SPECIFIED, 'Not Specified'),
-])
-
-ETHNICITIES = OrderedDict([
-    ('A', 'White - British'),
-    ('B', 'White - Irish'),
-    ('C', 'Other White Background'),
-    ('D', 'Mixed - White and Black Caribbean'),
-    ('E', 'Mixed - White and Black African'),
-    ('F', 'Mixed - White and Asian'),
-    ('G', 'Other Mixed Background'),
-    ('H', 'Asian or Asian British - Indian'),
-    ('J', 'Asian or Asian British - Pakistani'),
-    ('K', 'Asian or Asian British - Bangladeshi'),
-    ('L', 'Other Asian Background'),
-    ('M', 'Black Carribean'),
-    ('N', 'Black African'),
-    ('P', 'Other Black Background'),
-    ('R', 'Chinese'),
-    ('S', 'Other Ethnic Background'),
-    ('Z', 'Refused / Not Stated'),
-])
+from radar.utils import months_between, round_age, uniq
 
 
 class CONSENT_STATUS(Enum):
@@ -92,46 +64,63 @@ class Patient(db.Model, MetaModelMixin):
     def current_group_patients(self):
         return [x for x in self.group_patients if x.current]
 
-    @hybrid_property
-    def recruited_date(self):
-        from_dates = [x.from_date for x in self.group_patients if x.group.is_radar()]
+    @hybrid_method
+    def recruited_date(self, group=None):
+        group_patient = self._recruited_group_patient(group)
 
-        if from_dates:
-            return max(from_dates)
+        if group_patient is None:
+            from_date = None
         else:
-            return None
+            from_date = group_patient.from_date
+
+        return from_date
 
     @recruited_date.expression
-    def recruited_date(cls):
-        return select([func.min(GroupPatient.from_date)])\
-            .select_from(join(GroupPatient, Group, GroupPatient.group_id == Group.id))\
-            .where(GroupPatient.patient_id == cls.id)\
-            .where(Group.code == GROUP_CODE_RADAR)\
-            .where(Group.type == GROUP_TYPE.OTHER)\
-            .as_scalar()
+    def recruited_date(cls, group=None):
+        q = select([func.min(GroupPatient.from_date)])
+        q = q.select_from(join(GroupPatient, Group, GroupPatient.group_id == Group.id))
+        q = q.where(GroupPatient.patient_id == cls.id)
 
-    @hybrid_property
-    def current(self):
-        return any(x.is_radar() for x in self.current_groups)
+        if group is not None:
+            q = q.where(Group.id == group.id)
+        else:
+            q = q.where(Group.type == GROUP_TYPE.SYSTEM)
+
+        q = q.as_scalar()
+
+        return q
+
+    @hybrid_method
+    def current(self, group=None):
+        if group is not None:
+            return group in self.current_groups
+        else:
+            return any(group.type == GROUP_TYPE.SYSTEM for group in self.current_groups)
 
     @current.expression
-    def current(cls):
+    def current(cls, group=None):
         q = exists()
         q = q.select_from(join(GroupPatient, Group, GroupPatient.group_id == Group.id))
         q = q.where(GroupPatient.patient_id == cls.id)
         q = q.where(GroupPatient.current == True)  # noqa
-        q = q.where(Group.code == GROUP_CODE_RADAR)
-        q = q.where(Group.type == GROUP_TYPE.OTHER)
+
+        if group is not None:
+            q = q.where(Group.id == group.id)
+        else:
+            q = q.where(Group.type == GROUP_TYPE.SYSTEM)
+
         return q
 
-    @property
-    def _recruited_group_patient(self):
+    def _recruited_group_patient(self, group=None):
         from_date = None
         recruited_group_patient = None
 
         for group_patient in self.group_patients:
             if (
-                group_patient.group.is_radar() and
+                (
+                    (group is not None and group_patient.group == group) or
+                    (group is None and group_patient.group.type == GROUP_TYPE.SYSTEM)
+                ) and
                 (
                     from_date is None or
                     group_patient.from_date < from_date
@@ -142,9 +131,8 @@ class Patient(db.Model, MetaModelMixin):
 
         return recruited_group_patient
 
-    @property
-    def recruited_user(self):
-        group_patient = self._recruited_group_patient
+    def recruited_user(self, group=None):
+        group_patient = self._recruited_group_patient(group)
 
         if group_patient is None:
             user = None
@@ -153,9 +141,8 @@ class Patient(db.Model, MetaModelMixin):
 
         return user
 
-    @property
-    def recruited_group(self):
-        group_patient = self._recruited_group_patient
+    def recruited_group(self, group=None):
+        group_patient = self._recruited_group_patient(group)
 
         if group_patient is None:
             group = None
@@ -214,15 +201,17 @@ class Patient(db.Model, MetaModelMixin):
     def latest_demographics_query(cls, column):
         patient_alias = aliased(Patient)
 
-        return select([column])\
-            .select_from(join(PatientDemographics, patient_alias))\
-            .where(patient_alias.id == cls.id)\
+        return (
+            select([column])
+            .select_from(join(PatientDemographics, patient_alias))
+            .where(patient_alias.id == cls.id)
             .order_by(
                 PatientDemographics.modified_date.desc(),
                 PatientDemographics.id.desc(),
-            )\
-            .limit(1)\
+            )
+            .limit(1)
             .as_scalar()
+        )
 
     @property
     def latest_demographics(self):
@@ -398,15 +387,16 @@ class Patient(db.Model, MetaModelMixin):
         return values
 
     def to_age(self, date):
+        """Months between date of birth and supplied date."""
+
         date_of_birth = self.date_of_birth
 
         if date_of_birth is None:
-            seconds = None
+            months = None
         else:
-            seconds = (date - date_of_birth).total_seconds()
-            seconds = seconds_to_age(seconds)
+            months = round_age(months_between(date, date_of_birth))
 
-        return seconds
+        return months
 
     @property
     def frozen(self):
@@ -490,4 +480,9 @@ class Patient(db.Model, MetaModelMixin):
             CONSENT_STATUS.NOT_CONSENTED,
         )
 
+    def gender_label(self):
+        return GENDERS.get(self.gender)
 
+    @property
+    def ethnicity_label(self):
+        return ETHNICITIES.get(self.ethnicity)

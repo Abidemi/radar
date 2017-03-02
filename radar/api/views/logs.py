@@ -1,10 +1,10 @@
-from sqlalchemy import Integer, or_, and_
-from cornflake.exceptions import ValidationError
 from cornflake import fields, serializers
+from cornflake.exceptions import ValidationError
+from sqlalchemy import and_, Integer, or_
 
 from radar.api.permissions import AdminPermission
 from radar.api.serializers.logs import LogSerializer
-from radar.api.views.generics import ListModelView, RetrieveModelView, parse_args
+from radar.api.views.generics import ListModelView, parse_args, RetrieveModelView
 from radar.models.logs import Log
 from radar.models.users import User
 
@@ -30,9 +30,11 @@ class LogListView(ListModelView):
 
         args = parse_args(LogListRequestSerializer)
 
+        # Logs after a date (inclusive)
         if args['from_date'] is not None:
             query = query.filter(Log.date >= args['from_date'])
 
+        # Logs before a date (inclusive)
         if args['to_date'] is not None:
             query = query.filter(Log.date <= args['to_date'])
 
@@ -53,12 +55,17 @@ class LogListView(ListModelView):
         if args['patient'] is not None:
             patient_id = args['patient']
 
+            # Search INSERTs, UPDATEs, and DELETEs for this patient
             query = query.filter(or_(
                 and_(Log.type == 'VIEW_PATIENT', Log.data['patient_id'].astext.cast(Integer) == patient_id),
                 and_(Log.type == 'INSERT', Log.data[('new_data', 'patient_id')].astext.cast(Integer) == patient_id),
-                and_(Log.type == 'UPDATE', Log.data[('original_data', 'patient_id')].astext.cast(Integer) == patient_id),
+                and_(
+                    Log.type == 'UPDATE',
+                    Log.data[('original_data', 'patient_id')].astext.cast(Integer) == patient_id),
                 and_(Log.type == 'UPDATE', Log.data[('new_data', 'patient_id')].astext.cast(Integer) == patient_id),
-                and_(Log.type == 'DELETE', Log.data[('original_data', 'patient_id')].astext.cast(Integer) == patient_id),
+                and_(
+                    Log.type == 'DELETE',
+                    Log.data[('original_data', 'patient_id')].astext.cast(Integer) == patient_id),
             ))
 
         if args['table_name']:

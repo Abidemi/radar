@@ -1,13 +1,13 @@
-import uuid
 from functools import wraps
+import uuid
 
+from cornflake import fields, serializers
+from cornflake.exceptions import ValidationError
 from flask import request, jsonify, Response, abort
 from flask.views import MethodView
 from sqlalchemy import desc, inspect, Integer
-from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.dialects import postgresql
-from cornflake import fields, serializers
-from cornflake.exceptions import ValidationError
+from sqlalchemy.orm.exc import NoResultFound
 
 from radar.auth.sessions import current_user
 from radar.database import db
@@ -16,6 +16,8 @@ from radar.utils import snake_case_keys, camel_case_keys, snake_case
 
 
 def parse_args(serializer_class, args=None):
+    """Parse URL query string arguments with the specified serializer."""
+
     if args is None:
         args = request.args
 
@@ -34,6 +36,25 @@ def parse_args(serializer_class, args=None):
     return data
 
 
+def get_sort_args():
+    args = parse_args(SortRequestSerializer)
+
+    sort = args['sort']
+
+    if sort:
+        # Prefix with "-" to sort in reverse
+        if sort[0] == '-':
+            reverse = True
+            sort = sort[1:]
+        else:
+            reverse = False
+
+        # Sort field is in camel-case so convert it to snake-case
+        return snake_case(sort), reverse
+    else:
+        return None, False
+
+
 class ApiView(MethodView):
     def dispatch_request(self, *args, **kwargs):
         try:
@@ -46,7 +67,10 @@ class ApiView(MethodView):
             abort(404)
         except ValidationError as e:
             print e.errors
+
+            # Convert the errors to camel-case
             errors = camel_case_keys(e.errors)
+
             return jsonify(errors=errors), 422
 
 
@@ -126,25 +150,13 @@ class ModelView(SerializerViewMixin, PermissionViewMixin, ApiView):
         return query
 
     def get_sort_args(self):
-        args = parse_args(SortRequestSerializer)
-
-        sort = args['sort']
-
-        if sort:
-            if sort[0] == '-':
-                reverse = True
-                sort = sort[1:]
-            else:
-                reverse = False
-
-            return snake_case(sort), reverse
-        else:
-            return None, False
+        return get_sort_args()
 
     def sort_query(self, query):
         sort, reverse = self.get_sort_args()
 
         if sort is not None:
+            # Can be a dict or a list
             sort_fields = self.get_sort_fields()
 
             if isinstance(sort_fields, dict):
@@ -170,9 +182,11 @@ class ModelView(SerializerViewMixin, PermissionViewMixin, ApiView):
         per_page = args['per_page']
 
         if per_page is not None:
+            # Pages start at 1
             if page < 1:
                 page = 1
 
+            # Must be at least one item per page
             if per_page < 1:
                 per_page = 1
 
@@ -215,6 +229,8 @@ class ModelView(SerializerViewMixin, PermissionViewMixin, ApiView):
                 raise NotFound()
         elif isinstance(id_type, postgresql.UUID):
             try:
+                # Check the ID is a valid UUID so don't try
+                # to query with an invalid UUID.
                 uuid.UUID(obj_id)
             except ValueError:
                 raise NotFound()
@@ -421,11 +437,13 @@ def request_json(serializer_class):
             if json is None:
                 raise BadRequest()
 
+            # Convert from camel-case to snake-case
             json = snake_case_keys(json)
 
             context = {}
 
             if current_user.is_authenticated():
+                # Add the current_user to the context
                 context['user'] = current_user._get_current_object()
 
             serializer = serializer_class(data=json, context=context)
@@ -451,10 +469,13 @@ def response_json(serializer_class):
             context = {}
 
             if current_user.is_authenticated():
+                # Add the current_user to the context
                 context['user'] = current_user._get_current_object()
 
             serializer = serializer_class(response, context=context)
             data = serializer.data
+
+            # Snake-case to camel-case
             data = camel_case_keys(data)
 
             return jsonify(data), 200

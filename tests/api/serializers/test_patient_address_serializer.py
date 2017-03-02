@@ -1,13 +1,13 @@
 from datetime import date, timedelta
 
-import pytest
 from cornflake.exceptions import ValidationError
+import pytest
 
 from radar.api.serializers.patient_addresses import PatientAddressSerializer
 from radar.models.groups import Group
 from radar.models.patient_demographics import PatientDemographics
 from radar.models.patients import Patient
-from radar.models.source_types import SOURCE_TYPE_RADAR
+from radar.models.source_types import SOURCE_TYPE_MANUAL
 from radar.models.users import User
 
 
@@ -24,14 +24,15 @@ def patient():
 def address(patient):
     return {
         'source_group': Group(),
-        'source_type': SOURCE_TYPE_RADAR,
+        'source_type': SOURCE_TYPE_MANUAL,
         'patient': patient,
         'from_date': date(2014, 1, 1),
         'to_date': date(2015, 1, 1),
         'address1': 'Learning and Research Building',
         'address2': 'Southmead Hospital',
         'address3': 'Bristol',
-        'postcode': 'BS10 5NB'
+        'postcode': 'BS10 5NB',
+        'country': 'GB',
     }
 
 
@@ -43,6 +44,7 @@ def test_valid(address):
     assert obj.address2 == 'Southmead Hospital'
     assert obj.address3 == 'Bristol'
     assert obj.postcode == 'BS10 5NB'
+    assert obj.country == 'GB'
     assert obj.created_date is not None
     assert obj.modified_date is not None
     assert obj.created_user is not None
@@ -62,7 +64,7 @@ def test_source_group_none(address):
 def test_source_type_none(address):
     address['source_type'] = None
     obj = valid(address)
-    assert obj.source_type == 'RADAR'
+    assert obj.source_type == SOURCE_TYPE_MANUAL
 
 
 def test_from_date_none(address):

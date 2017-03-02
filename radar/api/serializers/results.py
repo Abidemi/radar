@@ -1,30 +1,30 @@
-from collections import OrderedDict
-
-from cornflake import serializers, fields
-from cornflake.sqlalchemy_orm import ReferenceField, ModelSerializer
-from cornflake.validators import min_, max_, in_, min_length, max_length
+from cornflake import fields, serializers
 from cornflake.exceptions import ValidationError
+from cornflake.sqlalchemy_orm import ModelSerializer, ReferenceField
+from cornflake.validators import in_, max_, max_length, min_, min_length
 
 from radar.api.serializers.common import (
+    EnumLookupField,
+    GroupSerializer,
+    MetaMixin,
     PatientMixin,
     SourceMixin,
-    MetaMixin,
     StringLookupField,
-    EnumLookupField,
-    GroupSerializer
 )
 from radar.api.serializers.validators import valid_date_for_patient
 from radar.models.results import (
-    Result,
     Observation,
-    OBSERVATION_VALUE_TYPE,
     OBSERVATION_SAMPLE_TYPE,
+    OBSERVATION_SAMPLE_TYPE_NAMES,
+    OBSERVATION_VALUE_TYPE,
     OBSERVATION_VALUE_TYPE_NAMES,
-    OBSERVATION_SAMPLE_TYPE_NAMES
+    Result,
 )
 
 
 def get_value_field(observation):
+    """Get a field for this type of observation."""
+
     value_type = observation.value_type
 
     if value_type == OBSERVATION_VALUE_TYPE.INTEGER:
@@ -32,9 +32,7 @@ def get_value_field(observation):
     elif value_type == OBSERVATION_VALUE_TYPE.REAL:
         field = fields.FloatField()
     elif value_type == OBSERVATION_VALUE_TYPE.ENUM:
-        options = [(x['code'], x['description']) for x in observation.properties['options']]
-        options = OrderedDict(options)
-        field = StringLookupField(options, key_name='code', value_name='description')
+        field = StringLookupField(observation.options_dict, key_name='code', value_name='description')
     elif value_type == OBSERVATION_VALUE_TYPE.STRING:
         field = fields.StringField()
     else:
@@ -48,7 +46,8 @@ class OptionSerializer(serializers.Serializer):
     description = fields.StringField()
 
 
-_property_fields = {
+# Extra fields for each observation type
+_custom_fields = {
     OBSERVATION_VALUE_TYPE.INTEGER: {
         'min_value': fields.IntegerField(required=False),
         'max_value': fields.IntegerField(required=False),
@@ -60,7 +59,7 @@ _property_fields = {
         'units': fields.StringField(required=False),
     },
     OBSERVATION_VALUE_TYPE.ENUM: {
-        'options': fields.ListField(child=OptionSerializer()),
+        'options': fields.ListField(child=OptionSerializer(), source='code_description_pairs'),
     },
     OBSERVATION_VALUE_TYPE.STRING: {
         'min_length': fields.IntegerField(required=False),
@@ -69,8 +68,10 @@ _property_fields = {
 }
 
 
-def get_property_fields(value_type):
-    return _property_fields.get(value_type, {})
+def get_custom_fields(value_type):
+    """Get the extra fields for the supplied observation value type."""
+
+    return _custom_fields.get(value_type, {})
 
 
 class BaseObservationSerializer(serializers.Serializer):
@@ -90,8 +91,8 @@ class ObservationSerializer(serializers.ProxySerializer):
         self.value_type_field = value_type_field
 
     def create_serializer(self, value_type):
-        property_fields = get_property_fields(value_type)
-        serializer = type('CustomObservationSerializer', (BaseObservationSerializer,), property_fields)()
+        custom_fields = get_custom_fields(value_type)
+        serializer = type('CustomObservationSerializer', (BaseObservationSerializer,), custom_fields)()
         return serializer
 
     def get_serializer(self, data):
@@ -130,30 +131,33 @@ class BaseResultSerializer(PatientMixin, SourceMixin, MetaMixin, ModelSerializer
 
         observation = data['observation']
         value_type = observation.value_type
-        properties = observation.properties
 
         validators = []
 
         if value_type == OBSERVATION_VALUE_TYPE.INTEGER or value_type == OBSERVATION_VALUE_TYPE.REAL:
-            min_value = properties.get('min_value')
-            max_value = properties.get('max_value')
+            min_value = observation.min_value
+            max_value = observation.max_value
 
             if min_value is not None:
+                # Check min
                 validators.append(min_(min_value))
 
             if max_value is not None:
+                # Check max
                 validators.append(max_(max_value))
         elif value_type == OBSERVATION_VALUE_TYPE.ENUM:
-            codes = [x['code'] for x in properties['options']]
+            codes = observation.option_codes
             validators.append(in_(codes))
         elif value_type == OBSERVATION_VALUE_TYPE.STRING:
-            min_length_value = properties.get('min_length')
-            max_length_value = properties.get('max_length')
+            min_length_value = observation.min_length
+            max_length_value = observation.max_length
 
             if min_length_value is not None:
+                # Check min length
                 validators.append(min_length(min_length_value))
 
             if max_length_value is not None:
+                # Check max length
                 validators.append(max_length(max_length_value))
 
         self.run_validators_on_field(data, 'value', validators)
@@ -183,6 +187,7 @@ class ResultSerializer(serializers.ProxySerializer):
     def get_deserializer(self, data):
         observation_data = self.observation_field.get_attribute(data)
 
+        # Attemp to get the observation so we can build the correct serializer in the next step
         try:
             observation = self.observation_field.run_validation(observation_data)
         except ValidationError as e:
@@ -194,6 +199,10 @@ class ResultSerializer(serializers.ProxySerializer):
 
 
 class BaseTinyResultSerializer(PatientMixin, serializers.Serializer):
+    """Result serializer that includes a minimal amount of data.
+
+    so thousands of results can be returned in the response."""
+
     id = fields.UUIDField()
     observation = fields.IntegerField(source='observation_id')
     source_type = fields.StringField()

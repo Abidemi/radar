@@ -1,33 +1,33 @@
 from cornflake import fields
+from cornflake.exceptions import SkipField, ValidationError
 from cornflake.sqlalchemy_orm import ModelSerializer
-from cornflake.exceptions import ValidationError, SkipField
 from cornflake.validators import (
-    not_empty,
-    upper,
-    normalise_whitespace,
-    max_length,
-    not_in_future,
-    none_if_blank,
-    optional,
+    email_address,
     lower,
-    email_address
+    max_length,
+    none_if_blank,
+    normalise_whitespace,
+    not_empty,
+    not_in_future,
+    optional,
+    upper,
 )
 
 from radar.api.serializers.common import (
-    PatientMixin,
-    RadarSourceMixin,
+    IntegerLookupField,
     MetaMixin,
+    PatientMixin,
     StringLookupField,
-    IntegerLookupField
+    SystemSourceMixin,
 )
 from radar.api.serializers.validators import after_day_zero
-from radar.models.patients import ETHNICITIES, GENDERS
+from radar.models.patient_codes import ETHNICITIES, GENDERS
 from radar.models.patient_demographics import PatientDemographics
 from radar.permissions import has_permission_for_patient
 from radar.roles import PERMISSION
 
 
-class PatientDemographicsSerializer(PatientMixin, RadarSourceMixin, MetaMixin, ModelSerializer):
+class PatientDemographicsSerializer(PatientMixin, SystemSourceMixin, MetaMixin, ModelSerializer):
     first_name = fields.StringField(validators=[not_empty(), upper(), normalise_whitespace(), max_length(100)])
     last_name = fields.StringField(validators=[not_empty(), upper(), normalise_whitespace(), max_length(100)])
     date_of_birth = fields.DateField(validators=[after_day_zero(), not_in_future()])
@@ -36,10 +36,22 @@ class PatientDemographicsSerializer(PatientMixin, RadarSourceMixin, MetaMixin, M
     year_of_death = fields.IntegerField(read_only=True)
     gender = IntegerLookupField(GENDERS)
     ethnicity = StringLookupField(ETHNICITIES, required=False)
-    home_number = fields.StringField(required=False, validators=[none_if_blank(), optional(), normalise_whitespace(), max_length(30)])
-    work_number = fields.StringField(required=False, validators=[none_if_blank(), optional(), normalise_whitespace(), max_length(30)])
-    mobile_number = fields.StringField(required=False, validators=[none_if_blank(), optional(), normalise_whitespace(), max_length(30)])
-    email_address = fields.StringField(required=False, validators=[none_if_blank(), optional(), lower(), email_address()])
+    home_number = fields.StringField(
+        required=False,
+        validators=[none_if_blank(), optional(), normalise_whitespace(), max_length(30)]
+    )
+    work_number = fields.StringField(
+        required=False,
+        validators=[none_if_blank(), optional(), normalise_whitespace(), max_length(30)]
+    )
+    mobile_number = fields.StringField(
+        required=False,
+        validators=[none_if_blank(), optional(), normalise_whitespace(), max_length(30)]
+    )
+    email_address = fields.StringField(
+        required=False,
+        validators=[none_if_blank(), optional(), lower(), email_address()]
+    )
 
     class Meta(object):
         model_class = PatientDemographics
@@ -53,6 +65,7 @@ class PatientDemographicsSerializer(PatientMixin, RadarSourceMixin, MetaMixin, M
     def validate(self, data):
         data = super(PatientDemographicsSerializer, self).validate(data)
 
+        # Can't die before you are born
         if data['date_of_death'] is not None and data['date_of_death'] < data['date_of_birth']:
             raise ValidationError({'date_of_death': 'Must be after date of birth.'})
 
@@ -63,7 +76,11 @@ class PatientDemographicsProxy(object):
     def __init__(self, demographics, user):
         self.demographics = demographics
         self.user = user
-        self.demographics_permission = has_permission_for_patient(user, demographics.patient, PERMISSION.VIEW_DEMOGRAPHICS)
+        self.demographics_permission = has_permission_for_patient(
+            user,
+            demographics.patient,
+            PERMISSION.VIEW_DEMOGRAPHICS
+        )
 
     @property
     def first_name(self):
@@ -87,22 +104,11 @@ class PatientDemographicsProxy(object):
             raise SkipField
 
     @property
-    def year_of_birth(self):
-        return self.demographics.date_of_birth.year
-
-    @property
     def date_of_death(self):
         if self.demographics_permission:
             return self.demographics.date_of_death
         else:
             raise SkipField
-
-    @property
-    def year_of_death(self):
-        if self.demographics.date_of_death is not None:
-            return self.demographics.date_of_death.year
-        else:
-            return None
 
     @property
     def home_number(self):

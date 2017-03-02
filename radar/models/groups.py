@@ -1,24 +1,38 @@
 from datetime import datetime
-
 from enum import Enum
-from sqlalchemy import Column, Integer, String, ForeignKey, Index, DateTime, and_, or_, func, null, text, Boolean
-from sqlalchemy.orm import relationship, backref
-from sqlalchemy.dialects import postgresql
-from sqlalchemy.ext.hybrid import hybrid_property
-import pytz
 
+import pytz
+from sqlalchemy import (
+    and_,
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    func,
+    Index,
+    Integer,
+    null,
+    or_,
+    String,
+    text,
+)
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import backref, relationship, synonym
+
+from radar.config import config
 from radar.database import db
 from radar.models.common import MetaModelMixin, patient_id_column, patient_relationship
-from radar.models.types import EnumType, EnumToStringType
 from radar.models.logs import log_changes
-from radar.models.settings import get_setting
+from radar.models.types import EnumToStringType, EnumType
 from radar.pages import PAGE
-from radar.roles import ROLE, PERMISSION, get_roles_with_permission, get_roles_managed_by_role
+from radar.roles import get_roles_managed_by_role, get_roles_with_permission, PERMISSION, ROLE
 
 
 class GROUP_TYPE(Enum):
     HOSPITAL = 'HOSPITAL'
     COHORT = 'COHORT'
+    SYSTEM = 'SYSTEM'
     OTHER = 'OTHER'
 
     def __str__(self):
@@ -33,6 +47,7 @@ GROUP_CODE_CHI = 'CHI'
 GROUP_CODE_HSC = 'HSC'
 GROUP_CODE_NHSBT = 'NHSBT'
 GROUP_CODE_BAPN = 'BAPN'
+GROUP_CODE_NURTURE = 'NURTURE'
 
 
 @log_changes
@@ -45,12 +60,18 @@ class Group(db.Model):
     name = Column(String, nullable=False)
     short_name = Column(String, nullable=False)
 
-    # https://bitbucket.org/zzzeek/sqlalchemy/issues/3467/array-of-enums-does-not-allow-assigning
-    pages = Column(postgresql.ARRAY(EnumToStringType(PAGE)))
+    # Parent group is required for cohort groups (should be a system group). It should be
+    # null for other types of group.
+    parent_group_id = Column(Integer, ForeignKey('groups.id'), CheckConstraint("""
+        (type != 'COHORT' and parent_group_id is null) or
+        (type = 'COHORT' and parent_group_id is not null)
+    """))
+    parent_group = relationship('Group', remote_side=[id])
+
     _instructions = Column('instructions', String)
     multiple_diagnoses = Column(Boolean, nullable=False, default=False, server_default=text('false'))
-
     is_recruitment_number_group = Column(Boolean, nullable=False, default=False, server_default=text('false'))
+    is_transplant_centre = Column(Boolean, nullable=True, default=False, server_default=text('false'))
 
     @property
     def patients(self):
@@ -60,16 +81,10 @@ class Group(db.Model):
     def users(self):
         return [x.user for x in self.group_users]
 
-    @classmethod
-    def get_radar(cls):
-        return cls.query.filter(cls.code == GROUP_CODE_RADAR, cls.type == GROUP_TYPE.OTHER).one()
-
-    # TODO @property
-    def is_radar(self):
-        return self.code == GROUP_CODE_RADAR and self.type == GROUP_TYPE.OTHER
-
     @property
     def has_dependencies(self):
+        """Returns true if this group has a dependency on another group."""
+
         try:
             check_dependencies([self])
         except DependencyError:
@@ -82,13 +97,18 @@ class Group(db.Model):
         if self._instructions is not None:
             return self._instructions
         elif self.type == GROUP_TYPE.COHORT:
-            return get_setting("DEFAULT_INSTRUCTIONS")
+            return config.get('DEFAULT_INSTRUCTIONS')
         else:
             return None
 
     @instructions.setter
     def instructions(self, value):
         self._instructions = value
+
+    instructions = synonym('_instructions', descriptor=instructions)
+
+    def __unicode__(self):
+        return self.name
 
 Index('groups_code_type_idx', Group.code, Group.type, unique=True)
 
@@ -100,7 +120,10 @@ class GroupPatient(db.Model, MetaModelMixin):
     id = Column(Integer, primary_key=True)
 
     group_id = Column(Integer, ForeignKey('groups.id'), nullable=False)
-    group = relationship('Group', foreign_keys=[group_id], backref=backref('group_patients', cascade='all, delete-orphan', passive_deletes=True))
+    group = relationship(
+        'Group',
+        foreign_keys=[group_id],
+        backref=backref('group_patients', cascade='all, delete-orphan', passive_deletes=True))
 
     patient_id = patient_id_column()
     patient = patient_relationship('group_patients')
@@ -113,6 +136,8 @@ class GroupPatient(db.Model, MetaModelMixin):
 
     @hybrid_property
     def current(self):
+        """Returns true if today's date is between the from and to date."""
+
         now = datetime.now(pytz.UTC)
         return (self.from_date <= now and (self.to_date is None or self.to_date >= now))
 
@@ -134,7 +159,10 @@ class GroupUser(db.Model, MetaModelMixin):
     group = relationship('Group', backref=backref('group_users', cascade='all, delete-orphan', passive_deletes=True))
 
     user_id = Column(Integer, ForeignKey('users.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False)
-    user = relationship('User', foreign_keys=[user_id], backref=backref('group_users', cascade='all, delete-orphan', passive_deletes=True))
+    user = relationship(
+        'User',
+        foreign_keys=[user_id],
+        backref=backref('group_users', cascade='all, delete-orphan', passive_deletes=True))
     role = Column(EnumType(ROLE, name='role'), nullable=False)
 
     def has_permission(self, permission):
@@ -165,6 +193,24 @@ Index('group_users_user_idx', GroupUser.user_id)
 Index('group_patients_group_user_role_idx', GroupUser.group_id, GroupUser.user_id, GroupUser.role, unique=True)
 
 
+@log_changes
+class GroupPage(db.Model):
+    __tablename__ = 'group_pages'
+
+    id = Column(Integer, primary_key=True)
+
+    group_id = Column(Integer, ForeignKey('groups.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False)
+    group = relationship('Group', backref=backref('group_pages', cascade='all, delete-orphan', passive_deletes=True))
+
+    page = Column(EnumToStringType(PAGE), nullable=False)
+
+    weight = Column(Integer, CheckConstraint('weight >= 0'), nullable=False)
+
+Index('group_pages_group_idx', GroupPage.group_id)
+Index('group_pages_page_idx', GroupPage.page)
+Index('group_pages_page_group_idx', GroupPage.page, GroupPage.group_id, unique=True)
+
+
 dependencies = [
     ((GROUP_TYPE.COHORT, 'NEPHROS'), (GROUP_TYPE.COHORT, 'INS')),
     ((GROUP_TYPE.COHORT, 'NSMPGNC3'), (GROUP_TYPE.COHORT, 'MPGN')),
@@ -176,6 +222,8 @@ class DependencyError(Exception):
 
 
 def check_dependencies(groups):
+    """Check group dependencies (e.g. if in x, must be in y)."""
+
     groups = set((group.type, group.code) for group in groups)
 
     for x, y in dependencies:
