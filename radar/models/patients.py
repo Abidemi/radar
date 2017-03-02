@@ -1,14 +1,9 @@
 from datetime import datetime
 from enum import Enum
 
-<<<<<<< HEAD
 import pytz
 from sqlalchemy import Column, Integer, select, join, String, func, exists, Sequence, Boolean, text
-from sqlalchemy.ext.hybrid import hybrid_property
-=======
-from sqlalchemy import Boolean, Column, exists, func, Integer, join, select, Sequence, String, text
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
->>>>>>> master
 from sqlalchemy.orm import aliased
 
 from radar.database import db
