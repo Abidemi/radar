@@ -38,6 +38,11 @@ class Patient(db.Model, MetaModelMixin):
         return [group for group in self.groups if group.type == GROUP_TYPE.SYSTEM]
 
     @property
+    def hospitals(self):
+        """Return groups of type GROUP_TYPE.HOSPITAL that patient belongs to."""
+        return [group for group in self.groups if group.type == GROUP_TYPE.HOSPITAL]
+
+    @property
     def groups(self):
         return [x.group for x in self.group_patients]
 
