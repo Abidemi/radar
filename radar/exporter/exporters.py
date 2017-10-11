@@ -818,7 +818,7 @@ class HadsExporter(Exporter):
         self._query = q
 
 
-@register('family-diseases-history')
+@register('family-history')
 class FamilyDiseasesHistoryExporter(Exporter):
     def run(self):
         self._columns = [

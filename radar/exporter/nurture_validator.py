@@ -1,18 +1,12 @@
-import argparse
-import ConfigParser
-
-from cornflake import fields, serializers
-from cornflake.sqlalchemy_orm import ReferenceField
 from sqlalchemy import text
 
 import xlsxwriter
 
 from radar.app import Radar
 from radar.database import db
-from radar.exporter.exporters import exporter_map
+
 from radar.exporter.utils import get_months, get_years
 from radar.models.groups import Group
-from radar.models.users import User
 
 
 DATEFMT = '%d/%m/%Y'
@@ -32,6 +26,18 @@ def format_date(date, long=False):
     elif date:
         return date.strftime(DATEFMT)
     return None
+
+
+def get_form_data(entry, bounds, fields):
+    data = [entry.patient_id]
+    for field in fields[bounds]:
+        data.append(entry.data.get(field, None))
+
+    data.append(format_date(entry.created_date, long=True))
+    data.append(entry.created_user.name)
+    data.append(format_date(entry.modified_date, long=True))
+    data.append(entry.modified_user.name)
+    return data
 
 
 class BaseSheet(object):
@@ -319,6 +325,7 @@ class Diagnoses(BaseSheet):
 
 class SocioEconomic(BaseSheet):
     __sheetname__ = 'socio-economic'
+
     def __init__(self, entries):
         self.entries = entries
         self.fields = (
@@ -342,29 +349,504 @@ class SocioEconomic(BaseSheet):
         )
 
     def export(self, sheet, row, errorfmt, warningfmt):
+        for entry in self.entries:
+
+            data = get_form_data(entry, slice(1, -4), self.fields)
+            sheet.write_row(row, 0, data)
+            for col in (1, 2, 3, 4, 5, 6, 7, 9):
+                if not data[col]:
+                    sheet.write(row, col, data[col], errorfmt)
+            if data[7] and not data[8]:
+                sheet.write(row, 8, data[8], warningfmt)
+            if data[9] and not data[10]:
+                sheet.write(row, 10, data[10], warningfmt)
+
+            row = row + 1
+        return row
+
+
+class NurtureCKD(BaseSheet):
+    __sheetname__ = 'nurtureckd'
+
+    def __init__(self, entries):
+        self.entries = entries
+        self.fields = (
+            'patient_id',
+            'date',
+            'visit',
+            'vaccinationFlu',
+            'vaccinationPneumonia',
+            'admission',
+            'admissionNumber',
+            'admissionEmergency',
+            'admissionPlanned',
+            'admissionDays',
+            'admissionAntibiotics',
+            'medicine1',
+            'tabletsParacetamol',
+            'yearsParacetamol',
+            'medicine2',
+            'tabletsCocodamol',
+            'yearsCocodamol',
+            'medicine3',
+            'tabletsIbuprofen',
+            'yearsIbuprofen',
+            'created_date',
+            'created_user',
+            'modified_date',
+            'modified_user',
+        )
+
+    def export(self, sheet, row, errorfmt, warningfmt):
+        for entry in self.entries:
+
+            data = get_form_data(entry, slice(1, -4), self.fields)
+            sheet.write_row(row, 0, data)
+
+            row = row + 1
+        return row
+
+
+class FamilyDiseasesHistory(BaseSheet):
+    __sheetname__ = 'family-diseases-history'
+
+    def __init__(self, entries):
+        self.entries = entries
+        self.fields = (
+            'patient_id',
+            'chd',
+            'eskd',
+            'diabetes',
+            'chdRelative1',
+            'chdRelative2',
+            'chdRelative3',
+            'eskdRelative1',
+            'eskdRelative2',
+            'eskdRelative3',
+            'diabetesRelative1',
+            'diabetesRelative2',
+            'diabetesRelative3',
+            'created_date',
+            'created_user',
+            'modified_date',
+            'modified_user',
+        )
+
+    def export(self, sheet, row, errorfmt, warningfmt):
+        for entry in self.entries:
+
+            data = get_form_data(entry, slice(1, -4), self.fields)
+            sheet.write_row(row, 0, data)
+
+            row = row + 1
+        return row
+
+
+class DiabeticComplications(BaseSheet):
+    __sheetname__ = 'diabetic-complications'
+
+    def __init__(self, entries):
+        self.entries = entries
+        self.fields = (
+            'patient_id',
+            'laser',
+            'foot',
+            'ulcers',
+            'retinopathy',
+            'peripheral',
+            'neuropathy',
+            'created_date',
+            'created_user',
+            'modified_date',
+            'modified_user',
+        )
+
+    def export(self, sheet, row, errorfmt, warningfmt):
+        for entry in self.entries:
+
+            data = get_form_data(entry, slice(1, -4), self.fields)
+            sheet.write_row(row, 0, data)
+
+            row = row + 1
+        return row
+
+
+class Anthropometrics(BaseSheet):
+    __sheetname__ = 'anthropometrics'
+
+    def __init__(self, entries):
+        self.entries = entries
+        self.fields = (
+            'patient_id',
+            'date',
+            'height',
+            'weight',
+            'hip',
+            'waist',
+            'arm',
+            'up',
+            'grip',
+            'karnofsky',
+            'systolic1',
+            'systolic2',
+            'systolic3',
+            'systolic',
+            'diastolic1',
+            'diastolic2',
+            'diastolic3',
+            'diastolic',
+            'created_date',
+            'created_user',
+            'modified_date',
+            'modified_user',
+        )
+
+    def export(self, sheet, row, errorfmt, warningfmt):
+        for entry in self.entries:
+
+            data = get_form_data(entry, slice(1, -4), self.fields)
+            sheet.write_row(row, 0, data)
+
+            row = row + 1
+        return row
+
+
+class Medications(BaseSheet):
+    __sheetname__ = 'medications'
+
+    def __init__(self, medications):
+        self.medications = medications
+        self.fields = (
+            'patient_id',
+            'source_group',
+            'source_type',
+            'from_date',
+            'to_date',
+            'drug_id',
+            'drug',
+            'drug_text',
+            'dose_quantity',
+            'dose_unit',
+            'dose_unit_label',
+            'dose_text',
+            'frequency',
+            'route',
+            'route_label',
+            'created_date',
+            'created_user',
+            'modified_date',
+            'modified_user',
+        )
+
+    def export(self, sheet, row=1, errorfmt=None, warningfmt=None):
+        for instance in self.medications:
+            data = [getattr(instance, field) for field in self.fields]
+            data[1] = instance.source_group.code
+
+            data[3] = format_date(data[3])
+            data[4] = format_date(data[4])
+
+            data[-4] = format_date(data[-4], long=True)
+            data[-3] = instance.created_user.name
+            data[-2] = format_date(data[-2], long=True)
+            data[-1] = instance.modified_user.name
+
+            sheet.write_row(row, 0, data)
+
+            row = row + 1
+        return row
+
+
+class Results(BaseSheet):
+    __sheetname__ = 'results'
+
+    def __init__(self, results, observations):
+        self.results = results
+        self.observations = observations
+        self.fields = tuple()
+
+    def export(self, sheet, row=1, errorfmt=None, warningfmt=None):
         pass
 
 
+class Pathology(BaseSheet):
+    __sheetname__ = 'pathology'
+
+    def __init__(self, pathology):
+        self.pathology = pathology
+        self.fields = (
+            'patient_id',
+            'source_group',
+            'date',
+            'kidney_type',
+            'kidney_type_label',
+            'kidney_side',
+            'kidney_side_label',
+            'reference_number',
+            'image_url',
+            'histological_summary',
+            'em_findings',
+            'created_date',
+            'created_user',
+            'modified_date',
+            'modified_user',
+        )
+
+    def export(self, sheet, row=1, errorfmt=None, warningfmt=None):
+        for instance in self.pathology:
+            data = [getattr(instance, field) for field in self.fields]
+            data[1] = instance.source_group.code
+
+            data[2] = format_date(data[2])
+
+            data[-4] = format_date(data[-4], long=True)
+            data[-3] = instance.created_user.name
+            data[-2] = format_date(data[-2], long=True)
+            data[-1] = instance.modified_user.name
+
+            sheet.write_row(row, 0, data)
+
+            row = row + 1
+        return row
+
+
+class RenalProgressions(BaseSheet):
+    __sheetname__ = 'renal_progressions'
+
+    def __init__(self, progressions):
+        self.progressions = progressions
+        self.fields = (
+            'patient_id',
+            'onset_date',
+            'ckd3a_date',
+            'ckd3b_date',
+            'ckd4_date',
+            'ckd5_date',
+            'esrf_date',
+            'created_date',
+            'created_user',
+            'modified_date',
+            'modified_user',
+        )
+
+    def export(self, sheet, row=1, errorfmt=None, warningfmt=None):
+        for instance in self.progressions:
+            data = [getattr(instance, field) for field in self.fields]
+            data[1] = format_date(data[1])
+            data[2] = format_date(data[2])
+            data[3] = format_date(data[3])
+            data[4] = format_date(data[4])
+            data[5] = format_date(data[5])
+            data[6] = format_date(data[6])
+
+            data[-4] = format_date(data[-4], long=True)
+            data[-3] = instance.created_user.name
+            data[-2] = format_date(data[-2], long=True)
+            data[-1] = instance.modified_user.name
+
+            sheet.write_row(row, 0, data)
+
+            row = row + 1
+        return row
+
+
+class Dialysis(BaseSheet):
+    __sheetname__ = 'dialysis'
+
+    def __init__(self, dialysis):
+        self.dialysis = dialysis
+        self.fields = (
+            'patient_id',
+            'source_group',
+            'source_type',
+            'from_date',
+            'to_date',
+            'modality',
+            'modality_label',
+            'created_date',
+            'created_user',
+            'modified_date',
+            'modified_user',
+        )
+
+    def export(self, sheet, row=1, errorfmt=None, warningfmt=None):
+        for instance in self.dialysis:
+            data = [getattr(instance, field) for field in self.fields]
+            data[1] = instance.source_group.code
+            data[3] = format_date(data[3])
+            data[4] = format_date(data[4])
+            data[-4] = format_date(data[-4], long=True)
+            data[-3] = instance.created_user.name
+            data[-2] = format_date(data[-2], long=True)
+            data[-1] = instance.modified_user.name
+
+            sheet.write_row(row, 0, data)
+
+            row = row + 1
+        return row
+
+
+class Transplants(BaseSheet):
+    __sheetname__ = 'transplants'
+
+    def __init__(self, transplants):
+        self.transplants = transplants
+        self.fields = (
+            'patient_id',
+            'source_group',
+            'source_type',
+            'transplant_group',
+            'date',
+            'modality',
+            'modality_label',
+            'date_of_recurrence',
+            'date_of_failure',
+            'created_date',
+            'created_user',
+            'modified_date',
+            'modified_user',
+        )
+
+    def export(self, sheet, row=1, errorfmt=None, warningfmt=None):
+        for instance in self.transplants:
+            data = [getattr(instance, field) for field in self.fields]
+            data[1] = instance.source_group.code
+            data[3] = instance.source_group.code
+            data[4] = format_date(data[4])
+            data[-4] = format_date(data[-4], long=True)
+            data[-3] = instance.created_user.name
+            data[-2] = format_date(data[-2], long=True)
+            data[-1] = instance.modified_user.name
+
+            sheet.write_row(row, 0, data)
+
+            row = row + 1
+        return row
+
+
+class Samples(BaseSheet):
+    __sheetname__ = 'samples'
+
+    def __init__(self, samples):
+        self.entries = samples
+        self.fields = (
+            'patient_id',
+            'date',
+            'barcode',
+            'protocol',
+            'visit',
+            'edta plasma A',
+            'edta plasma B',
+            'lihepPlasmaA',
+            'lihepPlasmaB',
+            'urineC',
+            'urineB',
+            'urineD',
+            'cfUrineB',
+            'serumC',
+            'serumA',
+            'serumB',
+            'rna',
+            'wholeBlood',
+            'created_date',
+            'created_user',
+            'modified_date',
+            'modified_user',
+        )
+
+    def export(self, sheet, row, errorfmt, warningfmt):
+        for entry in self.entries:
+
+            data = get_form_data(entry, slice(1, -4), self.fields)
+            sheet.write_row(row, 0, data)
+
+            row = row + 1
+        return row
+
+
 class Patient(object):
-    __slots__ = ('basic', 'demographics', 'addresses', 'aliases', 'numbers', 'diagnoses', 'socioeconomic')
+    __sheets__ = (
+        'basic',
+        'demographics',
+        'addresses',
+        'aliases',
+        'numbers',
+        'diagnoses',
+        'socioeconomic',
+
+        'nurtureckd',
+        'family_diseases_history',
+        'diabetic_complications',
+        'anthropometrics',
+        'medications',
+        'results',
+        'pathology',
+        'renal_progressions',
+        'dialysis',
+        'transplants',
+        'samples',
+    )
 
     def __init__(self, patient):
-        self.basic = Basic(patient)
-        self.demographics = Demographics(patient)
-        self.addresses = Addresses(patient)
-        self.aliases = Aliases(patient.patient_aliases)
-        self.numbers = Numbers(patient.patient_numbers)
-        self.diagnoses = Diagnoses(patient.patient_diagnoses)
-        self.socioeconomic = SocioEconomic([entry for entry in patient.entries if entry.form.slug=='socio-economic'])
+        self.original_patient = patient
+        self.patient_id = patient.id
+        self.basic = None
+        self.demographics = None
+        self.addresses = None
+        self.aliases = None
+        self.numbers = None
+        self.diagnoses = None
+        self.socioeconomic = None
+        self.nurtureckd = None
+        self.family_diseases_history = None
+        self.diabetic_complications = None
+        self.anthropometrics = None
+        self.medications = None
+        self.results = None
+        self.pathology = None
+        self.renal_progressions = None
+        self.dialysis = None
+        self.transplants = None
+        self.samples = None
+
+    def run(self):
+        self.basic = Basic(self.original_patient)
+        self.demographics = Demographics(self.original_patient)
+        self.addresses = Addresses(self.original_patient)
+        self.aliases = Aliases(self.original_patient.patient_aliases)
+        self.numbers = Numbers(self.original_patient.patient_numbers)
+        self.diagnoses = Diagnoses(self.original_patient.patient_diagnoses)
+        entries = [entry for entry in self.original_patient.entries if entry.form.slug == 'socio-economic']
+        self.socioeconomic = SocioEconomic(entries)
+        entries = [entry for entry in self.original_patient.entries if entry.form.slug == 'nurtureckd']
+        self.nurtureckd = NurtureCKD(entries)
+        entries = [entry for entry in self.original_patient.entries if entry.form.slug == 'family-history']
+        self.family_diseases_history = FamilyDiseasesHistory(entries)
+        entries = [entry for entry in self.original_patient.entries if entry.form.slug == 'diabetic-complications']
+        self.diabetic_complications = DiabeticComplications(entries)
+        entries = [entry for entry in self.original_patient.entries if entry.form.slug == 'anthropometrics']
+        self.anthropometrics = Anthropometrics(entries)
+        self.medications = Medications(self.original_patient.medications)
+        self.results = Results(self.original_patient.results, self.observations)
+        self.pathology = Pathology(self.original_patient.pathology)
+        self.renal_progressions = RenalProgressions(self.original_patient.renal_progressions)
+        self.dialysis = Dialysis(self.original_patient.dialysis)
+        self.transplants = Transplants(self.original_patient.transplants)
+        self.samples = Samples([entry for entry in self.original_patient.entries if entry.form.slug == 'samples'])
+
+    def add_observations(self, observations):
+        self.observations = observations
 
 
 class PatientList(object):
     def __init__(self, hospital_code):
         self.data = []
         self.hospital_code = hospital_code
+        self.observations = set()
 
     def append(self, patient):
-        self.data.append(patient)
+        self.observations |= set([result.observation.name for result in patient.results])
+        self.data.append(Patient(patient))
 
     def export(self):
         try:
@@ -375,74 +857,22 @@ class PatientList(object):
 
         workbook = xlsxwriter.Workbook('{}_export.xlsx'.format(self.hospital_code), {'remove_timezone': True})
         errorfmt = workbook.add_format({'bg_color': 'red'})
-        warningfmt = workbook.add_format({'bg_color': 'yello'})
+        warningfmt = workbook.add_format({'bg_color': 'orange'})
 
-        for attr in patient.__slots__:
+        for patient in self.data:
+            patient.add_observations(sorted(self.observations))
+            patient.run()
+
+        for attr in patient.__sheets__:
             obj = getattr(patient, attr)
 
             sheet = workbook.add_worksheet(obj.__sheetname__)
             sheet.write_row('A1', obj.header)
             current_row = 1
-            for patient in sorted(self.data, key=lambda pat: pat.basic.patient_id):
+            for patient in sorted(self.data, key=lambda pat: pat.patient_id):
+                patient.run()
+                patient.observations = sorted(self.observations)
                 current_row = getattr(patient, attr).export(sheet, current_row, errorfmt, warningfmt)
-
-
-def save(data, format, dest):
-    with open(dest, 'wb') as f:
-        data = data.export(format)
-        f.write(data)
-
-
-class GroupField(ReferenceField):
-    model_class = Group
-
-
-class UserField(ReferenceField):
-    model_class = User
-
-
-class ConfigSerializer(serializers.Serializer):
-    anonymised = fields.BooleanField(required=False)
-    data_group = GroupField(required=False)
-    patient_group = GroupField(required=False)
-    user = UserField(required=False)
-
-
-def parse_config(config_parser):
-    if config_parser.has_section('global'):
-        data = dict(config_parser.items('global'))
-    else:
-        data = dict()
-
-    serializer = ConfigSerializer(data=data)
-    serializer.is_valid(raise_exception=True)
-    validated_data = serializer.validated_data
-
-    return validated_data
-
-
-def create_exporters(config_parser):
-    config = parse_config(config_parser)
-
-    exporters = []
-
-    for name in config_parser.sections():
-        if name == 'global':
-            continue
-
-        exporter_class = exporter_map[name]
-
-        data = dict(config_parser.items(name))
-        exporter_config = exporter_class.parse_config(data)
-        exporter_config = dict(
-            config.items() +
-            exporter_config.items()
-        )
-        exporter_config.update({'name': name})
-        exporter = exporter_class(exporter_config)
-        exporters.append((name, exporter))
-
-    return exporters
 
 
 def get_hospitals():
@@ -470,19 +900,19 @@ def export_validate():
         patient_list = PatientList(hospital.code)
         for p in hospital.patients:
             if (p.in_group(nurtureckd) or p.in_group(nurtureins)) and not p.test:
-                patient_list.append(Patient(p))
+                patient_list.append(p)
         patient_list.export()
 
 
 def main():
-    argument_parser = argparse.ArgumentParser()
-    argument_parser.add_argument('config')
-    args = argument_parser.parse_args()
+    # argument_parser = argparse.ArgumentParser()
+    # argument_parser.add_argument('config')
+    # args = argument_parser.parse_args()
 
     app = Radar()
 
-    config_parser = ConfigParser.ConfigParser()
-    config_parser.readfp(open(args.config))
+    # config_parser = ConfigParser.ConfigParser()
+    # config_parser.readfp(open(args.config))
     with app.app_context():
         export_validate()
 
