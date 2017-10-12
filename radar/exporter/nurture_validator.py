@@ -292,6 +292,8 @@ class Diagnoses(BaseSheet):
 
     def export(self, sheet, row=1, errorfmt=None, warningfmt=None):
         for diagnosis in self.diagnoses:
+            if not diagnosis.status:
+                continue
             data = [getattr(diagnosis, field) for field in self.fields if hasattr(diagnosis, field)]
             data[1] = diagnosis.source_group.code
             data[3] = data[3].name if data[3] else None
@@ -445,7 +447,8 @@ class FamilyDiseasesHistory(BaseSheet):
 class DiabeticComplications(BaseSheet):
     __sheetname__ = 'diabetic-complications'
 
-    def __init__(self, entries):
+    def __init__(self, entries, patient):
+        self.patient = patient
         self.entries = entries
         self.fields = (
             'patient_id',
@@ -462,11 +465,16 @@ class DiabeticComplications(BaseSheet):
         )
 
     def export(self, sheet, row, errorfmt, warningfmt):
-        for entry in self.entries:
+        diagnoses = [diagnosis for diagnosis in self.patient.patient_diagnoses if diagnosis.status]
+        interested = set(('Diabetes - Type I', 'Diabetes - Type II'))
+        diabetes = [diagnosis for diagnosis in diagnoses if diagnosis.name in interested]
+        if diabetes and not self.entries:
+            sheet.write(row, 0, self.patient.id, errorfmt)
+            row = row + 1
 
+        for entry in self.entries:
             data = get_form_data(entry, slice(1, -4), self.fields)
             sheet.write_row(row, 0, data)
-
             row = row + 1
         return row
 
@@ -506,6 +514,10 @@ class Anthropometrics(BaseSheet):
 
             data = get_form_data(entry, slice(1, -4), self.fields)
             sheet.write_row(row, 0, data)
+
+            for no, item in enumerate(data):
+                if not item:
+                    sheet.write(row, no, data[no], errorfmt)
 
             row = row + 1
         return row
@@ -563,10 +575,30 @@ class Results(BaseSheet):
     def __init__(self, results, observations):
         self.results = results
         self.observations = observations
-        self.fields = tuple()
+        self.fields = ['patient_id', 'source_group', 'source_type', 'date']
+        self.fields.extend(self.observations)
 
     def export(self, sheet, row=1, errorfmt=None, warningfmt=None):
-        pass
+        from collections import OrderedDict
+
+        data = OrderedDict()
+
+        for result in self.results:
+            key = (result.patient_id, result.source_group.name, result.source_type, result.date)
+            if key not in data:
+                data[key] = {}
+
+            data[key][result.observation.name] = result.value_label_or_value
+
+        for key, results in data.items():
+            data = list(key)
+            for test in self.observations:
+                data.append(results.get(test, None))
+
+            sheet.write_row(row, 0, data)
+            row = row + 1
+
+        return row
 
 
 class Pathology(BaseSheet):
@@ -823,7 +855,7 @@ class Patient(object):
         entries = [entry for entry in self.original_patient.entries if entry.form.slug == 'family-history']
         self.family_diseases_history = FamilyDiseasesHistory(entries)
         entries = [entry for entry in self.original_patient.entries if entry.form.slug == 'diabetic-complications']
-        self.diabetic_complications = DiabeticComplications(entries)
+        self.diabetic_complications = DiabeticComplications(entries, self.original_patient)
         entries = [entry for entry in self.original_patient.entries if entry.form.slug == 'anthropometrics']
         self.anthropometrics = Anthropometrics(entries)
         self.medications = Medications(self.original_patient.medications)
