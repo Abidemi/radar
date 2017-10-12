@@ -1,3 +1,5 @@
+import itertools
+
 from sqlalchemy import text
 
 import xlsxwriter
@@ -11,6 +13,7 @@ from radar.models.groups import Group
 
 DATEFMT = '%d/%m/%Y'
 DATETIMEFMT = '%Y-%m-%d %H:%M:%S'
+BLOOD_PRESSURE_DELTA = 10
 
 
 def get_gender(gender_code):
@@ -466,7 +469,7 @@ class DiabeticComplications(BaseSheet):
 
     def export(self, sheet, row, errorfmt, warningfmt):
         diagnoses = [diagnosis for diagnosis in self.patient.patient_diagnoses if diagnosis.status]
-        interested = set(('Diabetes - Type I', 'Diabetes - Type II'))
+        interested = set(('Diabetes - Type I', 'Diabetes - Type II', 'Diabetes'))
         diabetes = [diagnosis for diagnosis in diagnoses if diagnosis.name in interested]
         if diabetes and not self.entries:
             sheet.write(row, 0, self.patient.id, errorfmt)
@@ -477,6 +480,13 @@ class DiabeticComplications(BaseSheet):
             sheet.write_row(row, 0, data)
             row = row + 1
         return row
+
+
+def in_range(values):
+    for first, second in itertools.combinations(values, 2):
+        if abs(first - second) > BLOOD_PRESSURE_DELTA:
+            return False
+    return True
 
 
 class Anthropometrics(BaseSheet):
@@ -518,6 +528,16 @@ class Anthropometrics(BaseSheet):
             for no, item in enumerate(data):
                 if not item:
                     sheet.write(row, no, data[no], errorfmt)
+
+            if not in_range(data[10:13]):
+                sheet.write(row, 10, data[10], errorfmt)
+                sheet.write(row, 11, data[11], errorfmt)
+                sheet.write(row, 12, data[12], errorfmt)
+
+            if not in_range(data[14:17]):
+                sheet.write(row, 14, data[14], errorfmt)
+                sheet.write(row, 15, data[15], errorfmt)
+                sheet.write(row, 16, data[16], errorfmt)
 
             row = row + 1
         return row
