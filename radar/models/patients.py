@@ -223,6 +223,16 @@ class Patient(db.Model, MetaModelMixin):
     def last_name(self):
         return self.latest_demographics_attr('last_name')
 
+    @property
+    def full_name(self):
+        first_name = self.first_name
+        last_name = self.last_name
+        if not first_name:
+            return last_name
+        if not last_name:
+            return first_name
+        return '{} {}'.format(first_name, last_name)
+
     @hybrid_property
     def date_of_birth(self):
         return self.latest_demographics_attr('date_of_birth')

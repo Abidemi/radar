@@ -1,3 +1,5 @@
+from collections import defaultdict
+import datetime
 import itertools
 
 from sqlalchemy import text
@@ -403,6 +405,8 @@ class NurtureCKD(BaseSheet):
         )
 
     def export(self, sheet, row, errorfmt, warningfmt):
+        # everything is validated on form submit, technically it is impossible
+        # to have missing fields
         for entry in self.entries:
 
             data = get_form_data(entry, slice(1, -4), self.fields)
@@ -585,6 +589,13 @@ class Medications(BaseSheet):
 
             sheet.write_row(row, 0, data)
 
+            for i in (3, 5, 6, 8, 9, 12):
+                if not data[i]:
+                    sheet.write(row, i, data[i], errorfmt)
+
+            if not data[6] and not data[7]:
+                sheet.write(row, 7, data[7], errorfmt)
+
             row = row + 1
         return row
 
@@ -697,6 +708,13 @@ class RenalProgressions(BaseSheet):
             data[-1] = instance.modified_user.name
 
             sheet.write_row(row, 0, data)
+
+            if not data[1]:
+                sheet.write(row, 1, data[1], errorfmt)
+
+            if not any(data[2:6]):
+                for i in range(2, 6):
+                    sheet.write(row, i, data[i], errorfmt)
 
             row = row + 1
         return row
@@ -812,6 +830,10 @@ class Samples(BaseSheet):
             data = get_form_data(entry, slice(1, -4), self.fields)
             sheet.write_row(row, 0, data)
 
+            for i in range(1, 18):
+                if not data[i]:
+                    sheet.write(row, i, data[i], errorfmt)
+
             row = row + 1
         return row
 
@@ -891,13 +913,24 @@ class Patient(object):
 
 
 class PatientList(object):
-    def __init__(self, hospital_code):
+    def __init__(self, hospital):
         self.data = []
-        self.hospital_code = hospital_code
+        self.hospital = hospital
+        self.hospital_code = hospital.code
         self.observations = set()
+        self.stats = defaultdict(int)
 
     def append(self, patient):
         self.observations |= set([result.observation.name for result in patient.results])
+        groups = [group.code for group in patient.groups]
+        if 'NURTUREINS' in groups:
+            self.stats['NURTUREINS'] += 1
+        if 'NURTURECKD' in groups:
+            self.stats['NURTURECKD'] += 1
+
+        self.stats['TOTAL'] += 1
+
+        self.stats['UKRDC'] += patient.ukrdc
         self.data.append(Patient(patient))
 
     def export(self):
@@ -910,6 +943,12 @@ class PatientList(object):
         workbook = xlsxwriter.Workbook('{}_export.xlsx'.format(self.hospital_code), {'remove_timezone': True})
         errorfmt = workbook.add_format({'bg_color': 'red'})
         warningfmt = workbook.add_format({'bg_color': 'orange'})
+
+        summary_sheet = workbook.add_worksheet('Summary')
+        summary_sheet.write('A1', 'Validation report')
+        summary_sheet.write('B1', datetime.date.today().strftime('%Y-%m-%d'))
+        summary_sheet.write('A3', 'Renal Unit')
+        summary_sheet.write('B3', self.hospital.name)
 
         for patient in self.data:
             patient.add_observations(sorted(self.observations))
@@ -925,6 +964,25 @@ class PatientList(object):
                 patient.run()
                 patient.observations = sorted(self.observations)
                 current_row = getattr(patient, attr).export(sheet, current_row, errorfmt, warningfmt)
+
+        summary_sheet.write('A5', 'NURTuRE INS')
+        summary_sheet.write('B5', self.stats.get('NURTUREINS', 0))
+        summary_sheet.write('A6', 'NURTuRE CKD')
+        summary_sheet.write('B6', self.stats.get('NURTURECKD', 0))
+        summary_sheet.write('A7', 'Total')
+        summary_sheet.write('B7', self.stats.get('TOTAL', 0))
+
+        summary_sheet.write('A9', 'Missing Patient View Link')
+        summary_sheet.write('B9', self.stats.get('TOTAL', 0) - self.stats.get('UKRDC', 0))
+
+        summary_sheet.write('A11', 'Patient list')
+        summary_sheet.write('A12', 'Radar No')
+        summary_sheet.write('B12', 'Patient Name')
+        counter = itertools.count(13)
+        for patient in self.data:
+            col = next(counter)
+            summary_sheet.write('A{}'.format(col), patient.patient_id)
+            summary_sheet.write('B{}'.format(col), patient.original_patient.full_name)
 
 
 def get_hospitals():
@@ -949,7 +1007,7 @@ def export_validate():
 
         print(hospital_id)
 
-        patient_list = PatientList(hospital.code)
+        patient_list = PatientList(hospital)
         for p in hospital.patients:
             if (p.in_group(nurtureckd) or p.in_group(nurtureins)) and not p.test:
                 patient_list.append(p)
